@@ -60,7 +60,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
+      # Install the build tools. Electron's own download is skipped here (the tests don't need it,
+      # and the build step below fetches its own copy), and the install retries if GitHub times out.
+      - name: Install
+        shell: bash
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && exit 0
+            echo "::warning::Install attempt $attempt failed; retrying in 30 seconds"
+            sleep 30
+          done
+          exit 1
       - run: npm test
       # Building downloads Electron from GitHub, which occasionally times out (e.g. HTTP 504).
       # Each build therefore retries up to 3 times, 30 seconds apart, before giving up.
