@@ -169,6 +169,22 @@ function readFeed(filePath, notifyKey) {
   }
 }
 
+// The parts of a login an edit can change (to say e.g. "GitHub: icon changed").
+const ENTRY_FIELDS = ['title', 'username', 'password', 'url', 'notes', 'icon', 'folder'];
+
+// Folders created or removed between two copies of the vault: [{ kind: added|deleted, name }].
+function diffFolders(before, after) {
+  const has = (d) => {
+    const n = normalize(d);
+    const names = new Set(Object.keys(n.folders));
+    for (const e of n.entries) if (e.folder) names.add(e.folder);
+    return names;
+  };
+  const a = has(before);
+  const b = has(after);
+  return [...[...b].filter((n) => !a.has(n)).map((name) => ({ kind: 'added', name })), ...[...a].filter((n) => !b.has(n)).map((name) => ({ kind: 'deleted', name }))];
+}
+
 // A frozen copy of the login list (edits replace the list and its items, but never change them in place).
 const snapshot = (data) => ({ entries: [...normalize(data).entries] });
 
@@ -180,7 +196,10 @@ function diffEntries(before, after) {
   for (const [id, e] of now) {
     const prev = old.get(id);
     if (!prev) out.push({ kind: 'added', id, title: e.title, changedOn: e.changedOn || null });
-    else if ((e.updatedAt || '') !== (prev.updatedAt || '')) out.push({ kind: 'updated', id, title: e.title, changedOn: e.changedOn || null });
+    else if ((e.updatedAt || '') !== (prev.updatedAt || '')) {
+      const fields = ENTRY_FIELDS.filter((f) => JSON.stringify(e[f] ?? null) !== JSON.stringify(prev[f] ?? null));
+      out.push({ kind: 'updated', id, title: e.title, changedOn: e.changedOn || null, fields });
+    }
   }
   for (const [id, e] of old) if (!now.has(id)) out.push({ kind: 'deleted', id, title: e.title, changedOn: null });
   return out;
@@ -224,12 +243,22 @@ class Vault {
     return list;
   }
 
+  /** Folders other computers created or removed since the last call (and forget them). */
+  takeRemoteFolderChanges() {
+    const list = this.remoteFolders || [];
+    this.remoteFolders = [];
+    return list;
+  }
+
   _noteRemote(before, after) {
     for (const c of diffEntries(before, after)) {
       const prev = this.remoteChanges.get(c.id);
-      // "added" then "updated" before we reported it is still just "added".
-      this.remoteChanges.set(c.id, prev && prev.kind === 'added' && c.kind === 'updated' ? { ...c, kind: 'added' } : c);
+      // "added" then "updated" before we reported it is still just "added"; edits add up.
+      if (prev && prev.kind === 'added' && c.kind === 'updated') this.remoteChanges.set(c.id, { ...c, kind: 'added', fields: undefined });
+      else if (prev && prev.kind === 'updated' && c.kind === 'updated') this.remoteChanges.set(c.id, { ...c, fields: [...new Set([...(prev.fields || []), ...(c.fields || [])])] });
+      else this.remoteChanges.set(c.id, c);
     }
+    this.remoteFolders = [...(this.remoteFolders || []), ...diffFolders(before, after)];
   }
 
   /** Hash of the vault file on disk right now (works while locked), or null. */
@@ -331,6 +360,7 @@ class Vault {
     this.diskData = null;
     this.lastHash = null;
     this.remoteChanges.clear();
+    this.remoteFolders = [];
   }
 
   async verifyPassword(password) {
@@ -602,7 +632,7 @@ class Vault {
     }
     const now = new Date().toISOString();
     for (const c of diffEntries(this.diskData || { entries: [] }, this.data)) {
-      feed.push({ id: crypto.randomUUID(), at: now, login: c.id, kind: c.kind, title: c.title, changedOn: THIS_DEVICE, device: deviceId });
+      feed.push({ id: crypto.randomUUID(), at: now, login: c.id, kind: c.kind, title: c.title, fields: c.fields, changedOn: THIS_DEVICE, device: deviceId });
     }
     const cutoff = new Date(Date.now() - FEED_DAYS * 864e5).toISOString();
     return feed.filter((f) => f.at >= cutoff).slice(-FEED_MAX);

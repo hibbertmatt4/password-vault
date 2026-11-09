@@ -291,7 +291,13 @@ $('connect-link').addEventListener('click', () => openSyncModal('connect'));
 $('missing-retry').addEventListener('click', () => showLockScreen());
 $('missing-find').addEventListener('click', () => openSyncModal('connect'));
 $('missing-local').addEventListener('click', async () => {
-  if (!confirm('Start a brand-new, empty vault on this computer? Your synced vault stays where it is, and you can connect to it again later.')) return;
+  const sure = await ask({
+    title: 'Start a new vault here?',
+    text: 'This starts a brand-new, empty vault on this computer. Your synced vault stays where it is, and you can connect to it again later.',
+    ok: 'Start new vault',
+    input: false,
+  });
+  if (!sure) return;
   await window.api.syncUseLocal();
   showLockScreen();
 });
@@ -552,6 +558,11 @@ document.querySelectorAll('[data-scope]').forEach((b) =>
     toast(s.scope === 'all' ? 'These choices now apply to all your computers' : 'This computer now keeps its own choices');
   })
 );
+// Another computer added, edited (incl. icons) or deleted a login, or changed folders: say so inside the app too.
+window.api.onRemoteChanges((msg) => {
+  if (!$('app-screen').classList.contains('hidden')) toast(msg);
+});
+
 // Another computer changed the shared choices.
 window.api.onNotifyChanged((s) => {
   if (!$('settings-pane').classList.contains('hidden')) renderNotify(s);
@@ -559,7 +570,14 @@ window.api.onNotifyChanged((s) => {
 $('sync-setup').addEventListener('click', () => openSyncModal('enable'));
 $('sync-open-folder').addEventListener('click', () => window.api.syncShowFolder());
 $('sync-stop').addEventListener('click', async () => {
-  if (!confirm('Stop syncing? A copy of your vault will be kept on this computer only. Your other computers keep using the copy in the cloud drive.')) return;
+  const sure = await ask({
+    title: 'Stop syncing?',
+    text: 'A copy of your vault will be kept on this computer only. Your other computers keep using the copy in the cloud drive.',
+    ok: 'Stop syncing',
+    danger: true,
+    input: false,
+  });
+  if (!sure) return;
   const res = await window.api.syncDisable();
   if (res.ok) {
     await renderSync(res.status);
@@ -1440,7 +1458,10 @@ $('edit-pane').addEventListener('submit', async (e) => {
 $('delete-btn').addEventListener('click', async () => {
   const e = current();
   if (!e) return;
-  if (!confirm(`Delete "${e.title}"? This cannot be undone.`)) return;
+  // (The app's own pop-up, not the browser's confirm(): on Windows that one can leave text fields
+  // unable to take typing until you switch windows.)
+  const sure = await ask({ title: `Delete “${e.title}”?`, text: 'This cannot be undone.', ok: 'Delete', danger: true, input: false });
+  if (!sure) return;
   const res = await window.api.remove(e.id);
   if (res && res.locked) return;
   await loadData();

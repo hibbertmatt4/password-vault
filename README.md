@@ -66,7 +66,9 @@ Your passwords can be shared between your Mac and Windows computers through a cl
   - **Fallback:** if that list can't be read (e.g. the master password was just changed on another computer), you get a general *"Your passwords were changed on another computer"* instead.
   - **Choose which ones:** **Settings → Notifications** has a switch each for new, changed and deleted passwords, and for app updates.
   - **This computer or all of them:** under **Use these choices on**, pick **All my computers** (the default) to apply your switches to every computer that syncs this vault, or **Only this computer** to give this computer its own choices. A computer set to *Only this computer* is never changed by the others. The shared choices travel in the synced file, encrypted like the change list, so even a locked computer follows them.
-  - **Mac:** allow notifications for Password Vault in **System Settings → Notifications** if they don't appear.
+  - **Inside the app:** while the vault is open you also get a short message in the app for every change from another computer, including new icons and folders, e.g. *"GitHub: icon changed on your Mac"*.
+  - **Mac:** allow notifications for Password Vault in **System Settings → Notifications** if they don't appear. Password Vault opts out of macOS "App Nap", so it keeps checking while it sits in the menu bar.
+  - **Troubleshooting:** each check is noted (counts only, no login names) in `logs/sync.log` in Password Vault's data folder.
 - **Master password changes:** your other computers lock and ask for the new password.
 - **Privacy:** the cloud company only ever sees the encrypted file.
 - **Stopping:** **Settings → Stop syncing** keeps a copy on that computer only.
@@ -92,9 +94,9 @@ If you do have a Mac: install Node.js, then run `npm install` and `npm run dist:
 
 ## Updates
 The app checks for new versions when it starts, every 30 minutes, when your computer wakes up, and when you open the window. When one is found:
-- you get a system notification and a banner in the app, and a dot appears on **Settings**;
-- **Windows:** click **Update now**, then **Restart & update** (or it installs next time you quit);
-- **Mac:** click **Download** to get the new version, then drag it into Applications. Unsigned Mac apps can't replace themselves.
+- **Windows:** the update downloads by itself in the background, even with the window closed. You then get a notification, *"Password Vault update ready"*. Click it, then **Restart & update** (or it installs next time you quit).
+- **Mac:** you get a notification straight away. Click **Download** to get the new version, then drag it into Applications. Unsigned Mac apps can't replace themselves.
+- Either way, there's a banner in the app and a dot on **Settings**. Update notifications can be turned off in **Settings → Notifications → App updates**.
 
 You can also go to **Settings → Check for updates**, or use the **Vault → Check for Updates…** menu.
 

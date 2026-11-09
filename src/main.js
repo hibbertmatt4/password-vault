@@ -132,9 +132,25 @@ function collapse(items) {
   const byLogin = new Map();
   for (const f of items) {
     const prev = byLogin.get(f.login);
-    byLogin.set(f.login, prev && prev.kind === 'added' && f.kind === 'updated' ? { ...f, kind: 'added' } : f);
+    if (prev && prev.kind === 'added' && f.kind === 'updated') byLogin.set(f.login, { ...f, kind: 'added', fields: undefined });
+    else if (prev && prev.kind === 'updated' && f.kind === 'updated') byLogin.set(f.login, { ...f, fields: [...new Set([...(prev.fields || []), ...(f.fields || [])])] });
+    else byLogin.set(f.login, f);
   }
   return [...byLogin.values()];
+}
+
+// A small log of change checks (Password Vault's data folder → logs/sync.log), so a missed notification
+// can be diagnosed. Counts and outcomes only — never login names or anything from the vault.
+function syncLog(text) {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    const file = path.join(dir, 'sync.log');
+    fs.mkdirSync(dir, { recursive: true });
+    if (fs.existsSync(file) && fs.statSync(file).size > 200 * 1024) fs.renameSync(file, file + '.old');
+    fs.appendFileSync(file, `${new Date().toISOString()} v${app.getVersion()} ${text}\n`);
+  } catch {
+    /* logging must never get in the way */
+  }
 }
 
 // New items in the change list made by other computers. `since` (a time) is used once at start-up,
@@ -156,13 +172,26 @@ function listNames(names) {
   return names.length > 3 ? `${shown} and ${names.length - 3} more` : shown;
 }
 
-// e.g. { title: 'Password updated on your Mac', body: 'GitHub', short: 'GitHub was updated on your Mac' }
+// "icon", "password and username", "name, website and notes"
+const FIELD_NAMES = { title: 'name', username: 'username', password: 'password', url: 'website', notes: 'notes', icon: 'icon', folder: 'folder' };
+function fieldList(fields) {
+  const names = (fields || []).map((f) => FIELD_NAMES[f]).filter(Boolean);
+  if (names.length <= 1) return names[0] || '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+// e.g. { title: 'Password updated on your Mac', body: 'GitHub — icon changed', short: 'GitHub: icon changed on your Mac' }
 function describeRemoteChanges(list) {
   const devices = new Set(list.map((c) => c.changedOn).filter(Boolean));
   const place = placeOf(devices.size === 1 ? [...devices][0] : null);
   if (list.length === 1) {
     const c = list[0];
-    return { title: `Password ${c.kind} ${place}`, body: c.title, short: `${c.title} was ${c.kind} ${place}` };
+    const what = c.kind === 'updated' ? fieldList(c.fields) : '';
+    return {
+      title: `Password ${c.kind} ${place}`,
+      body: what ? `${c.title} — ${what} changed` : c.title,
+      short: what ? `${c.title}: ${what} changed ${place}` : `${c.title} was ${c.kind} ${place}`,
+    };
   }
   const parts = [];
   for (const [kind, label] of [['added', 'Added'], ['updated', 'Updated'], ['deleted', 'Deleted']]) {
@@ -179,17 +208,28 @@ function notify(title, body) {
   changeNotification.show();
 }
 
-function reportChanges(list) {
+function reportChanges(list, how) {
+  const all = list || [];
   const wanted = notifyPrefs();
-  list = (list || []).filter((c) => wanted[c.kind]);
+  list = all.filter((c) => wanted[c.kind]);
+  if (all.length) syncLog(`${how}: ${all.length} change(s) from another computer, ${list.length} notified`);
   if (!list.length) return;
   const msg = describeRemoteChanges(list);
   notify(msg.title, msg.body);
 }
 
 // Unlocked: the vault itself says exactly what came in from the other computer.
+// Also shown as a message inside the app (any change, including icons and folders).
 function reportRemoteChanges() {
-  reportChanges(vault.takeRemoteChanges());
+  const list = vault.takeRemoteChanges();
+  const folders = vault.takeRemoteFolderChanges();
+  if (list.length) send('sync:remoteChanges', describeRemoteChanges(list).short);
+  else if (folders.length) {
+    const f = folders[0];
+    const what = folders.length === 1 ? `Folder “${f.name}” was ${f.kind === 'added' ? 'added' : 'removed'}` : 'Your folders were changed';
+    send('sync:remoteChanges', `${what} ${placeOf(null)}`);
+  }
+  reportChanges(list, 'unlocked');
 }
 
 // Locked (window closed, or started at sign-in): read the change list with the notify key.
@@ -205,9 +245,13 @@ function checkWhileLocked() {
   vault.seenHash = now;
   if (notifyKey) followShared(readShared(vault.filePath, notifyKey));
   const items = takeNewFeedItems();
-  if (items) return reportChanges(items);
+  if (items) {
+    if (!items.length) syncLog('locked: file changed, nothing new from other computers');
+    return reportChanges(items, 'locked');
+  }
   // No readable change list (vault not unlocked on this computer since installing this version,
   // the master password was changed elsewhere, or the other computer runs an older version).
+  syncLog(`locked: file changed, change list not readable (${notifyKey ? 'key does not fit' : 'no key yet: unlock once'})`);
   const p = notifyPrefs();
   if (!(p.added || p.updated || p.deleted) || Date.now() - lastGenericNotice < GENERIC_NOTICE_GAP_MS) return;
   lastGenericNotice = Date.now();
@@ -221,7 +265,8 @@ function catchUpOnStart() {
   const since = settings.get('feedSeenUntil');
   const items = takeNewFeedItems(since || '9999'); // first run with this feature: just remember what's there
   vault.seenHash = vault.fileHash();
-  reportChanges(items);
+  syncLog(`start-up: ${notifyKey ? 'change-list key ready' : 'no change-list key yet'}, ${items ? items.length : 'unreadable'} change(s) while off`);
+  reportChanges(items, 'start-up');
 }
 
 // Where the vault is, e.g. "OneDrive". Falls back to the name saved when sync was set up,
@@ -420,6 +465,7 @@ function createWindow() {
 
 function lockVault(reason) {
   if (vault && vault.isUnlocked()) {
+    syncLog(`vault locked (${reason}); watching for changes: ${isSynced() ? 'yes' : 'no (not synced)'}, change-list key: ${notifyKey ? 'yes' : 'no'}`);
     vault.lock();
     if (win && !win.isDestroyed()) win.webContents.send('vault:locked', reason);
   }

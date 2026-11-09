@@ -59,13 +59,12 @@ function setStatus(patch) {
 
 let activeNotification = null; // keep a reference so Windows doesn't drop the click handler
 let allowNotification = () => true; // Settings → Notifications → App updates
-function notify(version) {
-  if (notifiedVersion === version || !Notification.isSupported() || !allowNotification()) return;
-  notifiedVersion = version;
-  activeNotification = new Notification({
-    title: 'Password Vault update available',
-    body: `Version ${version} is ready to install. Click here to update.`,
-  });
+function notify(version, title, body) {
+  const key = `${version}:${title}`;
+  if (notifiedVersion === key || !Notification.isSupported() || !allowNotification()) return;
+  notifiedVersion = key;
+  logLine(`notification: ${title}`);
+  activeNotification = new Notification({ title, body });
   activeNotification.on('click', () => app.emit('show-window'));
   activeNotification.show();
 }
@@ -90,11 +89,21 @@ function init(sendToRenderer) {
     if (!['downloading', 'downloaded'].includes(status.state)) setStatus({ state: 'none' });
   });
   autoUpdater.on('update-available', (info) => {
+    logLine(`update available: ${info.version}`);
     setStatus({ state: 'available', version: info.version });
-    notify(info.version);
+    if (IS_MAC) {
+      // Mac downloads from the release page, so tell you now.
+      notify(info.version, 'Password Vault update available', `Version ${info.version} is ready. Click here to get it.`);
+    } else {
+      // Windows: fetch it quietly in the background, then tell you it's ready to install.
+      download();
+    }
   });
   autoUpdater.on('download-progress', (p) => setStatus({ state: 'downloading', percent: Math.round(p.percent) }));
-  autoUpdater.on('update-downloaded', (info) => setStatus({ state: 'downloaded', version: info.version, percent: 100 }));
+  autoUpdater.on('update-downloaded', (info) => {
+    setStatus({ state: 'downloaded', version: info.version, percent: 100 });
+    notify(info.version, 'Password Vault update ready', `Version ${info.version} has downloaded. Click here, then “Restart & update” to install it.`);
+  });
   autoUpdater.on('error', (err) => {
     logLine(`error (${downloadInProgress ? 'download' : manualCheck ? 'check' : 'background check'}): ${err && err.message ? err.message : err}`);
     // Downloads handle their own errors (with retries) in download().
@@ -206,6 +215,8 @@ async function download() {
   // All attempts failed. If GitHub's server is just busy, quietly try again later.
   const busy = isServerBusy(lastErr);
   setStatus({ state: 'error', error: friendlyError(lastErr, { willRetry: busy }) });
+  // Still let you know there's a new version, even though the background download didn't work yet.
+  if (status.version) notify(status.version, 'Password Vault update available', `Version ${status.version} is available. Click here to install it.`);
   if (busy) {
     retryTimer = setTimeout(() => {
       if (status.state === 'error') download();
