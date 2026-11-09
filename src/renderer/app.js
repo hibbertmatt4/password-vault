@@ -177,6 +177,9 @@ $('missing-local').addEventListener('click', async () => {
 let syncMode = null; // 'connect' | 'enable'
 let syncChoice = null; // folder path
 
+// Wait until the screen has actually been redrawn (two animation frames).
+const afterRepaint = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
 function closeSyncModal() {
   hide($('sync-modal'));
   syncMode = null;
@@ -287,8 +290,9 @@ $('sync-form').addEventListener('submit', async (e) => {
         return;
       }
       closeSyncModal();
+      await afterRepaint(); // let the pop-up and its blur disappear before the card changes size
       await refreshEntries();
-      await renderSync();
+      await renderSync(res.status);
       toast(`Syncing via ${res.status.name}`);
     }
   } finally {

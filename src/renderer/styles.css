@@ -234,6 +234,10 @@ button.add-btn:hover { background: #d4b993; border-color: #d4b993; }
 .card {
   background: var(--white); border: 1px solid var(--line);
   border-radius: var(--radius-card); padding: 22px 22px 6px; margin-bottom: 1.25rem;
+  /* each card paints as one unit, so when it grows its background is redrawn
+     (stops a cream patch showing through on Mac after a pop-up closes) */
+  contain: paint;
+  isolation: isolate;
 }
 .card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 14px; }
 .icon-tile {
@@ -432,7 +436,8 @@ button.inline-link:hover { background: none; border: none; color: var(--green-li
 
 /* pop-up */
 .overlay {
-  position: fixed; inset: 0; z-index: 9800;
+  /* starts below the title bar so the bar (and the window buttons) stay sharp */
+  position: fixed; inset: var(--titlebar-h) 0 0 0; z-index: 9400;
   background: rgba(26, 34, 19, 0.45); backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
