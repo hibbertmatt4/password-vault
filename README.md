@@ -14,7 +14,12 @@ An offline, encrypted password manager for Windows and Mac.
 > ⚠️ If you forget your master password, your data **cannot be recovered**.
 
 ## Folders and icons
-- **Folders:** when adding or editing a login, type a name in **Folder**, e.g. "Google accounts". Logins in the same folder are grouped in the sidebar; click a folder's name to open or close it. Existing folder names are suggested as you type.
+- **Folders:**
+  - **Make one:** click **New folder** next to *Your logins*, or click (or right-click) any empty space in the sidebar.
+  - **Fill it:** drag logins onto a folder, or out of it to empty space. You can also right-click a login and choose **Move to folder**, or pick a folder in the login's **Folder** dropdown.
+  - **Folder menu:** click a folder for **Add a password to this folder**, open/close, rename or delete. The small arrow opens and closes it, and **+** on hover adds a password straight into it.
+  - **Deleting a folder** never deletes its logins; they just move out of it.
+  - Folders, including empty ones, sync between your computers.
 - **Icons:** click **Icon** next to the name to choose:
   - **Logos:** over 100 well-known brands (Apple, Google, Netflix, banks and more).
   - **Emoji:** pick one, or type or paste any emoji.

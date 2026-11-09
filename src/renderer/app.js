@@ -496,8 +496,14 @@ window.api.onSyncStatus((s) => {
 });
 
 // Changes arrived from another computer.
+// Fetch logins and folders together (folders can be empty, so they're stored separately).
+let allFolders = [];
+async function loadData() {
+  [entries, allFolders] = await Promise.all([window.api.list(), window.api.folders()]);
+}
+
 async function refreshEntries() {
-  entries = await window.api.list();
+  await loadData();
   renderList();
   const editing = !$('edit-pane').classList.contains('hidden');
   if (selectedId && !entries.some((e) => e.id === selectedId)) {
@@ -516,7 +522,7 @@ window.api.onChanged(() => {
 async function openApp() {
   hide($('lock-screen'));
   show($('app-screen'));
-  entries = await window.api.list();
+  await loadData();
   $('search').value = '';
   renderList();
   showPane(null);
@@ -618,10 +624,267 @@ function saveCollapsed() {
   }
 }
 
+const ICON = {
+  folderPlus:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 10.5v5M9.5 13h5"/></svg>',
+  folder:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>',
+  key: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M16 6l3 3M14 8l2 2"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  pen: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16Z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+  open: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  out: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-2"/></svg>',
+};
+
+// ---------- floating menu (right-click, folder click, sidebar click) ----------
+function popupMenu(x, y, items) {
+  const menu = $('ctx-menu');
+  menu.replaceChildren();
+  for (const it of items) {
+    if (it === '-') {
+      menu.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' }));
+      continue;
+    }
+    if (it.label && !it.run) {
+      menu.appendChild(Object.assign(document.createElement('div'), { className: 'menu-label', textContent: it.label }));
+      continue;
+    }
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'menu-option' + (it.danger ? ' danger' : '') + (it.selected ? ' selected' : '');
+    b.setAttribute('role', 'menuitem');
+    if (it.icon) b.insertAdjacentHTML('afterbegin', it.icon);
+    b.appendChild(Object.assign(document.createElement('span'), { className: 'label', textContent: it.text }));
+    if (it.selected) b.appendChild(Object.assign(document.createElement('span'), { className: 'check', textContent: '✓' }));
+    b.addEventListener('click', () => {
+      closeMenu();
+      it.run();
+    });
+    menu.appendChild(b);
+  }
+  show(menu);
+  // keep it on screen
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
+  menu.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
+  const first = menu.querySelector('button');
+  if (first) first.focus({ preventScroll: true });
+}
+function closeMenu() {
+  hide($('ctx-menu'));
+}
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('#ctx-menu')) closeMenu();
+  if (!e.target.closest('.select-wrap')) closeFolderPicker();
+});
+window.addEventListener('blur', closeMenu);
+window.addEventListener('resize', closeMenu);
+$('entry-list').addEventListener('scroll', closeMenu);
+
+// ---------- small pop-up: name a folder / confirm ----------
+function ask({ title, text, value = '', placeholder = '', ok, danger = false, input = true, validate }) {
+  return new Promise((resolve) => {
+    $('ask-title').textContent = title;
+    $('ask-text').textContent = text || '';
+    $('ask-text').classList.toggle('hidden', !text);
+    $('ask-input').classList.toggle('hidden', !input);
+    $('ask-input').value = value;
+    $('ask-input').placeholder = placeholder;
+    $('ask-error').textContent = '';
+    $('ask-ok').textContent = ok;
+    $('ask-ok').classList.toggle('danger-fill', danger);
+    show($('ask-modal'));
+    if (input) {
+      $('ask-input').focus();
+      $('ask-input').select();
+    } else $('ask-ok').focus();
+    const finish = (val) => {
+      hide($('ask-modal'));
+      $('ask-form').onsubmit = null;
+      $('ask-cancel').onclick = null;
+      askCancel = null;
+      resolve(val);
+    };
+    askCancel = () => finish(null);
+    $('ask-cancel').onclick = () => finish(null);
+    $('ask-form').onsubmit = (e) => {
+      e.preventDefault();
+      const v = input ? $('ask-input').value.trim() : true;
+      const err = validate ? validate(v) : null;
+      if (err) return ($('ask-error').textContent = err);
+      finish(v);
+    };
+  });
+}
+let askCancel = null;
+$('ask-modal').addEventListener('mousedown', (e) => {
+  if (e.target === $('ask-modal') && askCancel) askCancel();
+});
+
+// ---------- folder actions ----------
+const sameName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }) === 0;
+
+async function newFolder(thenMove) {
+  const name = await ask({
+    title: 'New folder',
+    text: 'Group logins together, e.g. all your Google accounts. Drag logins onto the folder to add them.',
+    placeholder: 'Folder name, e.g. Google accounts',
+    ok: 'Create folder',
+    validate: (v) => (!v ? 'Give the folder a name.' : allFolders.some((f) => sameName(f, v)) ? 'You already have a folder with that name.' : null),
+  });
+  if (!name) return null;
+  const res = await window.api.addFolder(name);
+  if (res && res.locked) return null;
+  collapsedFolders.delete(res);
+  saveCollapsed();
+  if (thenMove) await window.api.moveToFolder(thenMove, res);
+  await loadData();
+  renderList();
+  if (thenMove && selectedId === thenMove) selectEntry(thenMove);
+  toast(thenMove ? `Moved to “${res}”` : `Folder “${res}” created`);
+  return res;
+}
+
+async function renameFolder(name) {
+  const to = await ask({
+    title: 'Rename folder',
+    value: name,
+    ok: 'Rename',
+    validate: (v) => (!v ? 'Give the folder a name.' : !sameName(v, name) && allFolders.some((f) => sameName(f, v)) ? 'You already have a folder with that name.' : null),
+  });
+  if (!to || to === name) return;
+  const res = await window.api.renameFolder(name, to);
+  if (res && res.locked) return;
+  if (collapsedFolders.delete(name)) collapsedFolders.add(res);
+  saveCollapsed();
+  await loadData();
+  renderList();
+  if (selectedId) selectEntry(selectedId);
+  toast(`Renamed to “${res}”`);
+}
+
+async function deleteFolder(name) {
+  const n = entries.filter((e) => e.folder === name).length;
+  const ok = await ask({
+    title: `Delete “${name}”?`,
+    text: n ? `The folder is removed. Its ${n} login${n === 1 ? '' : 's'} won't be deleted — ${n === 1 ? 'it moves' : 'they move'} out of the folder.` : 'The folder is empty.',
+    ok: 'Delete folder',
+    danger: true,
+    input: false,
+  });
+  if (!ok) return;
+  const res = await window.api.deleteFolder(name);
+  if (res && res.locked) return;
+  collapsedFolders.delete(name);
+  saveCollapsed();
+  await loadData();
+  renderList();
+  if (selectedId) selectEntry(selectedId);
+  toast(`Folder “${name}” deleted`);
+}
+
+function toggleFolder(name) {
+  if (collapsedFolders.has(name)) collapsedFolders.delete(name);
+  else collapsedFolders.add(name);
+  saveCollapsed();
+  renderList();
+}
+
+async function moveEntry(id, folder) {
+  const e = entries.find((x) => x.id === id);
+  if (!e || (e.folder || '') === folder) return;
+  const res = await window.api.moveToFolder(id, folder);
+  if (res && res.locked) return;
+  if (folder) collapsedFolders.delete(folder);
+  saveCollapsed();
+  await loadData();
+  renderList();
+  if (selectedId === id) selectEntry(id);
+  toast(folder ? `Moved “${e.title}” to “${folder}”` : `Moved “${e.title}” out of its folder`);
+}
+
+function addPassword(folder) {
+  closeMenu();
+  selectedId = null;
+  renderList();
+  openEditor(null);
+  setEditorFolder(folder || '');
+  if (!$('e-password').value) generateInto();
+}
+
+function folderMenuItems(name) {
+  const collapsed = collapsedFolders.has(name);
+  return [
+    { label: name },
+    { text: `Add a password to “${name}”`, icon: ICON.plus, run: () => addPassword(name) },
+    { text: collapsed ? 'Open folder' : 'Close folder', icon: ICON.open, run: () => toggleFolder(name) },
+    '-',
+    { text: 'Rename folder…', icon: ICON.pen, run: () => renameFolder(name) },
+    { text: 'Delete folder…', icon: ICON.trash, danger: true, run: () => deleteFolder(name) },
+  ];
+}
+
+function entryMenuItems(entry) {
+  const items = [{ label: entry.title }, { text: 'Open', icon: ICON.key, run: () => selectEntry(entry.id) }, '-', { label: 'Move to folder' }];
+  for (const f of allFolders) items.push({ text: f, icon: ICON.folder, selected: entry.folder === f, run: () => moveEntry(entry.id, f) });
+  items.push({ text: 'New folder…', icon: ICON.folderPlus, run: () => newFolder(entry.id) });
+  if (entry.folder) items.push('-', { text: 'Remove from folder', icon: ICON.out, run: () => moveEntry(entry.id, '') });
+  return items;
+}
+
+function sidebarMenuItems() {
+  return [
+    { text: 'New folder…', icon: ICON.folderPlus, run: () => newFolder() },
+    { text: 'Add a password', icon: ICON.plus, run: () => addPassword('') },
+  ];
+}
+
+// ---------- drag & drop ----------
+let draggingId = null;
+function clearDropMarks() {
+  document.querySelectorAll('#entry-list .drop-target').forEach((el) => el.classList.remove('drop-target'));
+  $('entry-list').classList.remove('drop-unfiled');
+}
+// Where a drop over `target` would put the login: a folder name, '' for "no folder", or null.
+function dropFolderFor(target) {
+  const row = target.closest('#entry-list li');
+  if (row && row.dataset.folder !== undefined) return row.dataset.folder;
+  if (target.closest('#entry-list')) return '';
+  return null;
+}
+$('entry-list').addEventListener('dragover', (e) => {
+  if (!draggingId) return;
+  const folder = dropFolderFor(e.target);
+  if (folder === null) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  clearDropMarks();
+  if (folder) {
+    const head = document.querySelector(`#entry-list .folder-head[data-folder="${CSS.escape(folder)}"]`);
+    if (head) head.classList.add('drop-target');
+  } else {
+    $('entry-list').classList.add('drop-unfiled');
+  }
+});
+$('entry-list').addEventListener('dragleave', (e) => {
+  if (!e.relatedTarget || !$('entry-list').contains(e.relatedTarget)) clearDropMarks();
+});
+$('entry-list').addEventListener('drop', (e) => {
+  e.preventDefault();
+  const folder = dropFolderFor(e.target);
+  const id = draggingId;
+  clearDropMarks();
+  if (id && folder !== null) moveEntry(id, folder);
+});
+
+// ---------- sidebar rows ----------
 function entryRow(entry, inFolder) {
   const li = document.createElement('li');
   if (entry.id === selectedId) li.classList.add('active');
   if (inFolder) li.classList.add('in-folder');
+  li.dataset.folder = entry.folder || '';
+  li.draggable = true;
   const meta = document.createElement('div');
   meta.className = 'meta';
   const t = document.createElement('div');
@@ -633,65 +896,117 @@ function entryRow(entry, inFolder) {
   meta.append(t, u);
   li.append(avatarFor(entry), meta);
   li.addEventListener('click', () => selectEntry(entry.id));
+  li.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    popupMenu(e.clientX, e.clientY, entryMenuItems(entry));
+  });
+  li.addEventListener('dragstart', (e) => {
+    draggingId = entry.id;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', entry.title);
+    closeMenu();
+    requestAnimationFrame(() => li.classList.add('dragging'));
+  });
+  li.addEventListener('dragend', () => {
+    draggingId = null;
+    li.classList.remove('dragging');
+    clearDropMarks();
+  });
   return li;
 }
 
 function folderHeader(name, count, collapsed) {
   const li = document.createElement('li');
   li.className = 'folder-head' + (collapsed ? ' collapsed' : '');
+  li.dataset.folder = name;
   li.setAttribute('role', 'button');
   li.setAttribute('aria-expanded', String(!collapsed));
-  li.innerHTML =
-    '<svg class="chev" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-    '<svg class="folder-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
-  const label = document.createElement('span');
-  label.textContent = name;
-  const c = document.createElement('span');
-  c.className = 'count';
-  c.textContent = count;
-  li.append(label, c);
-  li.addEventListener('click', () => {
-    if (collapsedFolders.has(name)) collapsedFolders.delete(name);
-    else collapsedFolders.add(name);
-    saveCollapsed();
-    renderList();
+  li.title = 'Click for options · drag logins here';
+  const chev = document.createElement('span');
+  chev.className = 'chev-btn';
+  chev.title = collapsed ? 'Open folder' : 'Close folder';
+  chev.innerHTML =
+    '<svg class="chev" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  chev.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleFolder(name);
   });
+  li.appendChild(chev);
+  li.insertAdjacentHTML(
+    'beforeend',
+    '<svg class="folder-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>'
+  );
+  const label = Object.assign(document.createElement('span'), { className: 'folder-name', textContent: name });
+  const add = Object.assign(document.createElement('span'), { className: 'add-here', textContent: '+', title: `Add a password to “${name}”` });
+  add.addEventListener('click', (e) => {
+    e.stopPropagation();
+    addPassword(name);
+  });
+  const c = Object.assign(document.createElement('span'), { className: 'count', textContent: count });
+  li.append(label, add, c);
+  // Click (or right-click) the folder for its menu: add a password here, open/close, rename, delete.
+  const menu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    popupMenu(e.clientX, e.clientY, folderMenuItems(name));
+  };
+  li.addEventListener('click', menu);
+  li.addEventListener('contextmenu', menu);
   return li;
 }
 
 function folderNames() {
-  return [...new Set(entries.map((e) => e.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return allFolders;
 }
 
 function renderList() {
   const list = $('entry-list');
   list.replaceChildren();
   const items = sortedFiltered();
-  if (items.length === 0) {
+  const searching = !!$('search').value.trim();
+  if (items.length === 0 && (searching || !allFolders.length)) {
     const li = document.createElement('li');
     li.className = 'none';
     li.textContent = entries.length ? 'No matches.' : 'No passwords saved yet.';
     list.appendChild(li);
     return;
   }
-  const searching = !!$('search').value.trim();
-  // Folders first (alphabetical), then logins that aren't in a folder.
+  // Folders first (alphabetical, including empty ones), then logins that aren't in a folder.
   const groups = new Map();
   for (const e of items) {
     const f = e.folder || '';
     if (!groups.has(f)) groups.set(f, []);
     groups.get(f).push(e);
   }
-  const names = [...groups.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const names = searching ? [...groups.keys()].filter(Boolean) : [...new Set([...allFolders, ...[...groups.keys()].filter(Boolean)])];
+  names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   for (const name of names) {
-    const group = groups.get(name);
+    const group = groups.get(name) || [];
     // Searching opens every folder; a folder holding the open login stays open too.
     const collapsed = !searching && collapsedFolders.has(name) && !group.some((e) => e.id === selectedId);
     list.appendChild(folderHeader(name, group.length, collapsed));
-    if (!collapsed) for (const e of group) list.appendChild(entryRow(e, true));
+    if (collapsed) continue;
+    for (const e of group) list.appendChild(entryRow(e, true));
+    if (!group.length) {
+      const empty = Object.assign(document.createElement('li'), { className: 'folder-empty', textContent: 'Empty — drag logins here' });
+      empty.dataset.folder = name;
+      list.appendChild(empty);
+    }
   }
   for (const e of groups.get('') || []) list.appendChild(entryRow(e, false));
 }
+
+// Click or right-click on empty space in the sidebar: New folder / Add a password.
+function sidebarMenu(e) {
+  if (e.target.closest('li, button, input')) return;
+  e.preventDefault();
+  popupMenu(e.clientX, e.clientY, sidebarMenuItems());
+}
+$('entry-list').addEventListener('click', sidebarMenu);
+$('entry-list').addEventListener('contextmenu', sidebarMenu);
+document.querySelector('.sidebar .nav-label').addEventListener('contextmenu', sidebarMenu);
+$('new-folder-btn').addEventListener('click', () => newFolder());
 
 function showPane(name) {
   for (const id of ['empty-state', 'view-pane', 'edit-pane', 'settings-pane']) hide($(id));
@@ -767,14 +1082,100 @@ function openEditor(entry) {
   $('e-reveal').textContent = 'Show';
   $('e-url').value = entry ? entry.url : '';
   $('e-notes').value = entry ? entry.notes : '';
-  $('e-folder').value = entry ? entry.folder || '' : '';
-  $('folder-list').replaceChildren(...folderNames().map((f) => Object.assign(document.createElement('option'), { value: f })));
+  setEditorFolder(entry ? entry.folder || '' : '');
+  closeFolderPicker();
   editingIcon = entry ? entry.icon || null : null;
   updateEditorIcon();
   updateStrength();
   showPane('edit-pane');
   $('e-title').focus();
 }
+
+// ---------- folder picker in the editor (styled to match the app) ----------
+function setEditorFolder(name) {
+  $('e-folder').value = name || '';
+  $('folder-trigger-label').textContent = name || 'No folder';
+  $('folder-trigger').classList.toggle('empty', !name);
+}
+
+function closeFolderPicker() {
+  hide($('folder-menu'));
+  $('folder-trigger').classList.remove('open');
+  $('folder-trigger').setAttribute('aria-expanded', 'false');
+}
+
+function openFolderPicker() {
+  const menu = $('folder-menu');
+  menu.replaceChildren();
+  const current = $('e-folder').value;
+  const option = (text, value, icon) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'menu-option' + (value === current ? ' selected' : '');
+    b.setAttribute('role', 'option');
+    b.insertAdjacentHTML('afterbegin', icon);
+    b.appendChild(Object.assign(document.createElement('span'), { className: 'label', textContent: text }));
+    b.appendChild(Object.assign(document.createElement('span'), { className: 'check', textContent: '✓' }));
+    b.addEventListener('click', () => {
+      setEditorFolder(value);
+      closeFolderPicker();
+    });
+    return b;
+  };
+  menu.appendChild(option('No folder', '', ICON.out));
+  // folders the vault knows about, plus one typed for this login that isn't saved yet
+  const names = [...new Set([...allFolders, ...(current ? [current] : [])])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  if (names.length) menu.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' }));
+  for (const f of names) menu.appendChild(option(f, f, ICON.folder));
+  menu.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' }));
+  const nb = document.createElement('button');
+  nb.type = 'button';
+  nb.className = 'menu-option';
+  nb.insertAdjacentHTML('afterbegin', ICON.folderPlus);
+  nb.appendChild(Object.assign(document.createElement('span'), { className: 'label', textContent: 'New folder…' }));
+  nb.addEventListener('click', async () => {
+    closeFolderPicker();
+    const name = await ask({
+      title: 'New folder',
+      text: 'This login will go in the new folder when you save.',
+      placeholder: 'Folder name, e.g. Google accounts',
+      ok: 'Use this folder',
+      validate: (v) => (!v ? 'Give the folder a name.' : null),
+    });
+    if (!name) return;
+    const existing = allFolders.find((f) => sameName(f, name));
+    setEditorFolder(existing || name);
+  });
+  menu.appendChild(nb);
+  show(menu);
+  $('folder-trigger').classList.add('open');
+  $('folder-trigger').setAttribute('aria-expanded', 'true');
+  const sel = menu.querySelector('.selected') || menu.querySelector('button');
+  if (sel) sel.focus({ preventScroll: true });
+}
+
+$('folder-trigger').addEventListener('click', () => ($('folder-menu').classList.contains('hidden') ? openFolderPicker() : closeFolderPicker()));
+$('folder-menu').addEventListener('keydown', (e) => {
+  const opts = [...$('folder-menu').querySelectorAll('button')];
+  const i = opts.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown') opts[Math.min(i + 1, opts.length - 1)].focus();
+  else if (e.key === 'ArrowUp') opts[Math.max(i - 1, 0)].focus();
+  else if (e.key === 'Escape') {
+    e.stopPropagation();
+    closeFolderPicker();
+    $('folder-trigger').focus();
+  } else return;
+  e.preventDefault();
+});
+$('ctx-menu').addEventListener('keydown', (e) => {
+  const opts = [...$('ctx-menu').querySelectorAll('button')];
+  const i = opts.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown') opts[Math.min(i + 1, opts.length - 1)].focus();
+  else if (e.key === 'ArrowUp') opts[Math.max(i - 1, 0)].focus();
+  else if (e.key === 'Escape') closeMenu();
+  else return;
+  e.preventDefault();
+});
 
 // ---------- icon picker ----------
 let editingIcon = null; // icon chosen in the editor (null = automatic)
@@ -955,7 +1356,7 @@ $('edit-pane').addEventListener('submit', async (e) => {
     icon: editingIcon, // null = automatic (matching logo or first letter)
   });
   if (saved && saved.locked) return; // master password changed on another computer; lock screen explains
-  entries = await window.api.list();
+  await loadData();
   toast('Saved');
   selectEntry(saved.id);
 });
@@ -966,7 +1367,7 @@ $('delete-btn').addEventListener('click', async () => {
   if (!confirm(`Delete "${e.title}"? This cannot be undone.`)) return;
   const res = await window.api.remove(e.id);
   if (res && res.locked) return;
-  entries = await window.api.list();
+  await loadData();
   selectedId = null;
   renderList();
   showPane(null);
@@ -1168,6 +1569,9 @@ window.addEventListener('blur', closeMenus);
 // Escape closes editor/settings.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && openMenu) return closeMenus();
+  if (e.key === 'Escape' && !$('ctx-menu').classList.contains('hidden')) return closeMenu();
+  if (e.key === 'Escape' && !$('folder-menu').classList.contains('hidden')) return closeFolderPicker();
+  if (e.key === 'Escape' && !$('ask-modal').classList.contains('hidden')) return askCancel && askCancel();
   if (e.key === 'Escape' && !$('icon-modal').classList.contains('hidden')) return hide($('icon-modal'));
   if (e.key === 'Escape' && syncMode) return closeSyncModal();
   if (e.key === 'Escape' && !$('bio-modal').classList.contains('hidden')) return closeBioModal();

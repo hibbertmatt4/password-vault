@@ -98,7 +98,13 @@
         <input id="search" type="search" placeholder="Search…" />
         <button id="add-btn" class="add-btn" title="Add a new password">+ Add</button>
       </div>
-      <div class="nav-label">Your logins</div>
+      <div class="nav-label">
+        <span>Your logins</span>
+        <button type="button" id="new-folder-btn" class="nav-mini" title="New folder">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 10.5v5M9.5 13h5"/></svg>
+          New folder
+        </button>
+      </div>
       <ul id="entry-list" class="entry-list"></ul>
       <div class="sidebar-bottom">
         <button id="settings-btn">Settings <span id="update-dot" class="update-dot hidden" title="Update available"></span></button>
@@ -161,9 +167,16 @@
               <input id="e-title" placeholder="e.g. Gmail" />
             </div>
           </div>
-          <div class="field"><label for="e-folder">Folder</label>
-            <input id="e-folder" list="folder-list" placeholder="No folder — type a name to create one, e.g. Google accounts" />
-            <datalist id="folder-list"></datalist>
+          <div class="field"><label for="folder-trigger">Folder</label>
+            <input id="e-folder" type="hidden" />
+            <div class="select-wrap">
+              <button type="button" id="folder-trigger" class="select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <svg class="folder-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+                <span id="folder-trigger-label">No folder</span>
+                <svg class="select-arrow" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div id="folder-menu" class="menu select-menu hidden" role="listbox"></div>
+            </div>
           </div>
           <div class="field"><label for="e-username">Username / email</label><input id="e-username" /></div>
           <div class="field"><label for="e-password">Password</label>
@@ -293,6 +306,23 @@
       <div class="modal-actions">
         <button type="button" id="sync-cancel">Cancel</button>
         <button type="submit" id="sync-submit" class="primary"></button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Right-click / click menus (sidebar, folders, logins) -->
+  <div id="ctx-menu" class="menu ctx-menu hidden" role="menu"></div>
+
+  <!-- Small pop-up: name a folder, or confirm deleting one -->
+  <div id="ask-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ask-title">
+    <form id="ask-form" class="modal ask-modal" autocomplete="off">
+      <h3 id="ask-title" class="modal-title"></h3>
+      <p id="ask-text" class="modal-sub"></p>
+      <input id="ask-input" maxlength="60" />
+      <p id="ask-error" class="error" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="ask-cancel">Cancel</button>
+        <button type="submit" id="ask-ok" class="primary"></button>
       </div>
     </form>
   </div>

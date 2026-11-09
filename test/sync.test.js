@@ -80,6 +80,35 @@ const tick = () => new Promise((r) => setTimeout(r, 5)); // make timestamps diff
     const A2 = new Vault(cloud, path.join(dir, 'backupsA2'));
     assert.strictEqual(await A2.unlock('third pw 123'), true);
 
+    // Folders: empty folders sync; renames move logins; deleting a folder keeps its logins.
+    const A3 = new Vault(cloud, path.join(dir, 'bA3'));
+    await A3.unlock('third pw 123');
+    const B3 = new Vault(cloud, path.join(dir, 'bB3'));
+    await B3.unlock('third pw 123');
+    A3.addFolder('  Work   stuff ');
+    B3.syncFromDisk();
+    assert(B3.folders().includes('Work stuff'), 'empty folder should sync');
+    const spot = B3.list().find((e) => e.title === 'Spotify');
+    B3.moveToFolder(spot.id, 'Work stuff');
+    A3.syncFromDisk();
+    assert.strictEqual(A3.list().find((e) => e.id === spot.id).folder, 'Work stuff');
+    await tick();
+    A3.renameFolder('Work stuff', 'Music');
+    B3.syncFromDisk();
+    assert.deepStrictEqual(B3.folders().filter((f) => /Work|Music/.test(f)), ['Music']);
+    assert.strictEqual(B3.list().find((e) => e.id === spot.id).folder, 'Music');
+    await tick();
+    B3.deleteFolder('Music');
+    A3.syncFromDisk();
+    assert(!A3.folders().includes('Music'));
+    assert.strictEqual(A3.list().find((e) => e.id === spot.id).folder, '', 'login kept, moved out of the deleted folder');
+    await tick();
+    A3.addFolder('Music'); // re-creating a deleted folder works
+    B3.syncFromDisk();
+    assert(B3.folders().includes('Music'));
+    A3.lock();
+    B3.lock();
+
     // Old-format vaults (plain list of entries) still open.
     const old = merge({ entries: [{ id: '1', title: 'x', updatedAt: '2026-01-01' }], deleted: {} }, { entries: [], deleted: { 1: '2026-02-01' } });
     assert.strictEqual(old.entries.length, 0);

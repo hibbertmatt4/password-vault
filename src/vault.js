@@ -58,17 +58,32 @@ function cleanIcon(icon) {
 
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 
-// Older vaults stored a plain array of entries.
+// Older vaults stored a plain array of entries, and had no folder list.
+// folders: { name: createdAt } (so empty folders exist), folderDeleted: { name: deletedAt }.
 function normalize(payload) {
-  if (Array.isArray(payload)) return { entries: payload, deleted: {} };
-  return { entries: payload.entries || [], deleted: payload.deleted || {} };
+  if (Array.isArray(payload)) return { entries: payload, deleted: {}, folders: {}, folderDeleted: {} };
+  return {
+    entries: payload.entries || [],
+    deleted: payload.deleted || {},
+    folders: payload.folders || {},
+    folderDeleted: payload.folderDeleted || {},
+  };
+}
+
+// Keep the newest timestamp for each key.
+function newest(a, b) {
+  const out = { ...a };
+  for (const [k, at] of Object.entries(b)) if (!out[k] || at > out[k]) out[k] = at;
+  return out;
 }
 
 // Combine two copies of the vault. Newest edit of each login wins; a deletion beats any edit made before it.
+// Folders: a folder exists unless it was deleted after it was (last) created.
 function merge(a, b) {
-  const deleted = { ...a.deleted };
-  for (const [id, at] of Object.entries(b.deleted)) if (!deleted[id] || at > deleted[id]) deleted[id] = at;
+  a = normalize(a);
+  b = normalize(b);
   const cutoff = new Date(Date.now() - TOMBSTONE_DAYS * 864e5).toISOString();
+  const deleted = newest(a.deleted, b.deleted);
   for (const [id, at] of Object.entries(deleted)) if (at < cutoff) delete deleted[id];
 
   const byId = new Map();
@@ -77,16 +92,27 @@ function merge(a, b) {
     if (!cur || (e.updatedAt || '') > (cur.updatedAt || '')) byId.set(e.id, e);
   }
   const entries = [...byId.values()].filter((e) => !(deleted[e.id] && deleted[e.id] >= (e.updatedAt || '')));
-  return { entries, deleted };
+
+  const folderDeleted = newest(a.folderDeleted, b.folderDeleted);
+  for (const [n, at] of Object.entries(folderDeleted)) if (at < cutoff) delete folderDeleted[n];
+  const folders = {};
+  for (const [n, at] of Object.entries(newest(a.folders, b.folders))) if (!(folderDeleted[n] && folderDeleted[n] >= at)) folders[n] = at;
+  return { entries, deleted, folders, folderDeleted };
 }
 
 const sameData = (a, b) => JSON.stringify(sortData(a)) === JSON.stringify(sortData(b));
 function sortData(d) {
+  d = normalize(d);
+  const sortObj = (o) => Object.fromEntries(Object.entries(o).sort());
   return {
     entries: [...d.entries].sort((x, y) => x.id.localeCompare(y.id)),
-    deleted: Object.fromEntries(Object.entries(d.deleted).sort()),
+    deleted: sortObj(d.deleted),
+    folders: sortObj(d.folders),
+    folderDeleted: sortObj(d.folderDeleted),
   };
 }
+
+const cleanFolderName = (name) => String(name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
 
 class Vault {
   /**
@@ -117,7 +143,7 @@ class Vault {
     this.salt = crypto.randomBytes(32);
     this.kdf = { ...KDF };
     this.key = await deriveKey(masterPassword, this.salt, this.kdf);
-    this.data = { entries: [], deleted: {} };
+    this.data = { entries: [], deleted: {}, folders: {}, folderDeleted: {} };
     this._write();
   }
 
@@ -221,7 +247,7 @@ class Vault {
       password: String(entry.password || ''),
       url: String(entry.url || '').trim(),
       notes: String(entry.notes || ''),
-      folder: String(entry.folder || '').trim().slice(0, 60),
+      folder: cleanFolderName(entry.folder),
       icon: cleanIcon(entry.icon),
     };
     let saved;
@@ -233,6 +259,7 @@ class Vault {
       saved = { id: crypto.randomUUID(), ...clean, createdAt: now, updatedAt: now };
     }
     this.data.entries = [...this.data.entries.filter((e) => e.id !== saved.id), saved];
+    if (saved.folder) this._ensureFolder(saved.folder, now);
     this._save();
     return saved;
   }
@@ -242,6 +269,60 @@ class Vault {
     this.data.entries = this.data.entries.filter((e) => e.id !== id);
     this.data.deleted[id] = new Date().toISOString();
     this._save();
+  }
+
+  // ---------- folders ----------
+  /** Every folder name: folders you created (even empty ones) plus any a login is in. */
+  folders() {
+    this._requireUnlocked();
+    const names = new Set(Object.keys(this.data.folders));
+    for (const e of this.data.entries) if (e.folder) names.add(e.folder);
+    return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }
+
+  addFolder(name) {
+    this._requireUnlocked();
+    const n = cleanFolderName(name);
+    if (!n) throw new Error('Give the folder a name.');
+    this._ensureFolder(n, new Date().toISOString());
+    this._save();
+    return n;
+  }
+
+  /** Move one login into a folder ('' = no folder). */
+  moveToFolder(id, folder) {
+    this._requireUnlocked();
+    const e = this.data.entries.find((x) => x.id === id);
+    if (!e) throw new Error('Entry not found.');
+    return this.upsert({ ...e, folder });
+  }
+
+  renameFolder(oldName, newName) {
+    this._requireUnlocked();
+    const to = cleanFolderName(newName);
+    if (!to) throw new Error('Give the folder a name.');
+    const now = new Date().toISOString();
+    this.data.entries = this.data.entries.map((e) => (e.folder === oldName ? { ...e, folder: to, updatedAt: now } : e));
+    delete this.data.folders[oldName];
+    this.data.folderDeleted[oldName] = now;
+    this._ensureFolder(to, now);
+    this._save();
+    return to;
+  }
+
+  /** Delete a folder. Its logins are kept and moved out of the folder. */
+  deleteFolder(name) {
+    this._requireUnlocked();
+    const now = new Date().toISOString();
+    this.data.entries = this.data.entries.map((e) => (e.folder === name ? { ...e, folder: '', updatedAt: now } : e));
+    delete this.data.folders[name];
+    this.data.folderDeleted[name] = now;
+    this._save();
+  }
+
+  _ensureFolder(name, at) {
+    if (!this.data.folders[name]) this.data.folders[name] = at;
+    delete this.data.folderDeleted[name];
   }
 
   /** Copy this vault (with its current key) to another file, e.g. when turning sync on or off. */

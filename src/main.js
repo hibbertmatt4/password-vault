@@ -349,6 +349,11 @@ function registerIpc() {
   ipcMain.handle('vault:list', () => (vault.isUnlocked() ? vault.list() : []));
   ipcMain.handle('vault:save', guarded((_e, entry) => vault.upsert(entry)));
   ipcMain.handle('vault:delete', guarded((_e, id) => vault.remove(id)));
+  ipcMain.handle('vault:folders', () => (vault.isUnlocked() ? vault.folders() : []));
+  ipcMain.handle('vault:addFolder', guarded((_e, name) => vault.addFolder(name)));
+  ipcMain.handle('vault:moveToFolder', guarded((_e, id, folder) => vault.moveToFolder(id, folder)));
+  ipcMain.handle('vault:renameFolder', guarded((_e, from, to) => vault.renameFolder(from, to)));
+  ipcMain.handle('vault:deleteFolder', guarded((_e, name) => vault.deleteFolder(name)));
 
   ipcMain.handle(
     'vault:changeMaster',
