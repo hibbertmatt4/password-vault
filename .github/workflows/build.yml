@@ -50,6 +50,8 @@ jobs:
     needs: check
     if: needs.check.outputs.release == 'true'
     strategy:
+      # One system failing doesn't cancel the other's build.
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -60,14 +62,30 @@ jobs:
           node-version: 20
       - run: npm ci
       - run: npm test
+      # Building downloads Electron from GitHub, which occasionally times out (e.g. HTTP 504).
+      # Each build therefore retries up to 3 times, 30 seconds apart, before giving up.
       - name: Build and publish Windows app
         if: runner.os == 'Windows'
-        run: npx electron-builder --win --publish always
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            npx electron-builder --win --publish always && exit 0
+            echo "::warning::Windows build attempt $attempt failed; retrying in 30 seconds"
+            sleep 30
+          done
+          exit 1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and publish Mac app
         if: runner.os == 'macOS'
-        run: npx electron-builder --mac --publish always
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            npx electron-builder --mac --publish always && exit 0
+            echo "::warning::Mac build attempt $attempt failed; retrying in 30 seconds"
+            sleep 30
+          done
+          exit 1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
