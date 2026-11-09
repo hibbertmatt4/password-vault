@@ -74,6 +74,13 @@ jobs:
           done
           exit 1
       - run: npm test
+      # Fetch Electron and the packaging tools through GitHub's API (which kept working when the normal
+      # download addresses returned 504s). Never fails the build: the next step falls back to its own downloads.
+      - name: Pre-download build tools
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/prefetch-build-tools.sh
       # Building downloads Electron from GitHub, which occasionally times out (e.g. HTTP 504).
       # Each build therefore retries up to 3 times, 30 seconds apart, before giving up.
       - name: Build and publish Windows app
