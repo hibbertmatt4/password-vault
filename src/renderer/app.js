@@ -351,6 +351,18 @@ async function openSyncModal(mode) {
   $('sync-pw').value = '';
   setEye(document.querySelector('[data-target="sync-pw"]'), false);
   $('sync-pw-wrap').classList.toggle('hidden', connect);
+  hide($('sync-bio'));
+  if (!connect) {
+    // Offer Touch ID / Windows Hello instead of typing the master password, when it's on.
+    window.api.bioStatus().then((bio) => {
+      if (syncMode !== 'enable' || !bio.available || !bio.enabled || bio.needsPassword) return;
+      $('sync-bio').dataset.name = bio.name;
+      $('sync-bio-label').textContent = `Use ${bio.name} instead`;
+      $('sync-pw').placeholder = `Confirm it's you — or use ${bio.name}`;
+      show($('sync-bio'));
+    });
+    $('sync-pw').placeholder = "Confirm it's you";
+  }
   $('provider-other-path').textContent = 'Any folder your cloud app keeps in sync';
   $('provider-other').classList.remove('selected');
 
@@ -399,22 +411,48 @@ $('sync-form').addEventListener('submit', async (e) => {
       await showLockScreen();
       toast(`Found your vault in ${res.where.name}. Unlock it to continue.`);
     } else {
-      if (!$('sync-pw').value) return ($('sync-error').textContent = 'Enter your master password to confirm.');
-      const res = await window.api.syncEnable(syncChoice, $('sync-pw').value);
-      $('sync-pw').value = '';
-      if (!res.ok) {
-        if (!res.locked) $('sync-error').textContent = res.error;
-        return;
+      if (!$('sync-pw').value) {
+        return ($('sync-error').textContent = $('sync-bio').classList.contains('hidden')
+          ? 'Enter your master password to confirm.'
+          : `Enter your master password, or use ${$('sync-bio').dataset.name} below.`);
       }
-      closeSyncModal();
-      await afterRepaint(); // let the pop-up and its blur disappear before the card changes size
-      await refreshEntries();
-      await renderSync(res.status);
-      toast(`Syncing via ${res.status.name}`);
+      await enableSync(false);
     }
   } finally {
     btn.disabled = false;
     btn.textContent = original;
+  }
+});
+
+// Turn sync on, confirming with the typed master password or Touch ID / Windows Hello.
+async function enableSync(useBiometric) {
+  const res = await window.api.syncEnable(syncChoice, useBiometric ? null : $('sync-pw').value, useBiometric);
+  $('sync-pw').value = '';
+  if (!res.ok) {
+    if (res.cancelled || res.locked) return;
+    if (res.needsPassword) {
+      hide($('sync-bio'));
+      $('sync-pw').focus();
+    }
+    $('sync-error').textContent = res.error;
+    return;
+  }
+  closeSyncModal();
+  await afterRepaint(); // let the pop-up and its blur disappear before the card changes size
+  await refreshEntries();
+  await renderSync(res.status);
+  toast(`Syncing via ${res.status.name}`);
+}
+
+$('sync-bio').addEventListener('click', async () => {
+  if (!syncChoice) return ($('sync-error').textContent = 'Choose where your vault should be kept.');
+  $('sync-error').textContent = '';
+  const btn = $('sync-bio');
+  btn.disabled = true;
+  try {
+    await enableSync(true);
+  } finally {
+    btn.disabled = false;
   }
 });
 

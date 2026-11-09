@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld('api', {
   syncChooseFolder: () => ipcRenderer.invoke('sync:chooseFolder'),
   syncStatus: () => ipcRenderer.invoke('sync:status'),
   syncConnect: (folder) => ipcRenderer.invoke('sync:connect', folder),
-  syncEnable: (folder, password) => ipcRenderer.invoke('sync:enable', folder, password),
+  syncEnable: (folder, password, useBiometric) => ipcRenderer.invoke('sync:enable', folder, password, !!useBiometric),
   syncDisable: () => ipcRenderer.invoke('sync:disable'),
   syncUseLocal: () => ipcRenderer.invoke('sync:useLocal'),
   syncShowFolder: () => ipcRenderer.invoke('sync:showFolder'),

@@ -200,15 +200,21 @@ function registerIpc() {
   // Settings: start syncing (move this vault into a cloud folder, merging with one already there).
   ipcMain.handle(
     'sync:enable',
-    guarded(async (_e, folder, password) => {
+    guarded(async (_e, folder, password, useBiometric) => {
       if (!vault.isUnlocked()) return { ok: false, error: 'Unlock your vault first.' };
-      if (!(await vault.verifyPassword(String(password || '')))) return { ok: false, error: 'Incorrect master password.' };
+      const who = await confirmIdentity(password, useBiometric, 'turn on sync for Password Vault');
+      if (!who.ok) return who;
       const oldPath = vault.filePath;
       const existing = sync.findVaultIn(String(folder));
       if (existing && samePath(existing, oldPath)) return { ok: true };
       if (existing) {
         const other = new Vault(existing, backupDir);
-        if (!(await other.unlock(password))) {
+        const opened = useBiometric ? other.unlockWithKey(vault.keyInfo().key) : await other.unlock(password);
+        if (!opened) {
+          if (useBiometric) {
+            // A vault from another computer is already there; combining them needs the typed password.
+            return { ok: false, needsPassword: true, error: 'There’s already a vault in that folder. Type your master password to combine the two.' };
+          }
           return {
             ok: false,
             error: 'There is already a Password Vault in that folder with a different master password. Use the same master password on both computers, or choose another folder.',
@@ -278,6 +284,26 @@ function registerIpc() {
   });
 
   // ---------- Touch ID / Windows Hello ----------
+  // "Confirm it's you" for any step that asks for the master password (except changing it, and
+  // turning Touch ID / Hello on): either the typed master password or Touch ID / Windows Hello.
+  async function confirmIdentity(password, useBiometric, reason) {
+    if (!useBiometric) {
+      return (await vault.verifyPassword(String(password || ''))) ? { ok: true } : { ok: false, error: 'Incorrect master password.' };
+    }
+    const st = await biometric.status(bioVaultInfo());
+    if (!st.enabled || !st.available || st.needsPassword) {
+      return { ok: false, needsPassword: true, error: `Type your master password this time (${biometric.name()} needs it once a week, or after it changes).` };
+    }
+    const res = await biometric.unlockKey(reason);
+    if (res.error === 'cancelled') return { ok: false, cancelled: true };
+    if (res.error) return { ok: false, needsPassword: true, error: 'Type your master password to continue.' };
+    const current = vault.keyInfo();
+    const matches = res.key.length === current.key.length && require('crypto').timingSafeEqual(res.key, current.key);
+    res.key.fill(0);
+    current.key.fill(0);
+    return matches ? { ok: true } : { ok: false, needsPassword: true, error: 'Type your master password to continue.' };
+  }
+
   const bioVaultInfo = () => ({ filePath: vault.filePath, salt: vault.isUnlocked() ? vault.keyInfo().salt : vault.fileSalt() });
 
   ipcMain.handle('bio:status', () => biometric.status(vault.exists() ? bioVaultInfo() : null));
