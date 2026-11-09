@@ -37,6 +37,7 @@
   --shadow-menu: 0 8px 24px rgba(49, 61, 42, 0.15);
   --shadow-modal: 0 16px 44px rgba(30, 36, 26, 0.28);
   --sidebar-w: 290px;
+  --titlebar-h: 40px; /* must match TITLEBAR_HEIGHT in main.js */
 }
 
 /* 2. BASE ---------------------------------------------------------------- */
@@ -50,6 +51,7 @@ body {
   color: var(--green);
   -webkit-font-smoothing: antialiased;
   user-select: none;
+  display: flex; flex-direction: column; overflow: hidden;
 }
 ::selection { background: rgba(197, 168, 130, 0.45); }
 .hidden { display: none !important; }
@@ -108,17 +110,18 @@ button:disabled { opacity: 0.6; cursor: wait; }
 .brand-text .accent { color: var(--tan); }
 
 /* 5. LOCK SCREEN --------------------------------------------------------- */
-#lock-screen { display: flex; align-items: center; justify-content: center; padding: 20px; }
+#lock-screen { display: flex; padding: 24px 20px; overflow-y: auto; }
 .lock-card {
+  margin: auto; /* centred, but scrolls instead of being cut off when it's taller than the window */
   width: 400px; max-width: 100%;
-  padding: 40px 36px 32px;
+  padding: 34px 36px 24px;
   background: var(--white);
   border: 1px solid var(--line);
   border-radius: 20px;
   box-shadow: 0 16px 44px rgba(49, 61, 42, 0.12);
   text-align: center;
 }
-.lock-logo { width: 84px; height: 84px; border-radius: 22px; box-shadow: 0 8px 24px rgba(49, 61, 42, 0.25); }
+.lock-logo { width: 72px; height: 72px; border-radius: 19px; box-shadow: 0 8px 24px rgba(49, 61, 42, 0.25); }
 .lock-card h1 {
   font-family: var(--font-display); font-size: 30px; font-weight: 700;
   color: var(--green); margin: 18px 0 4px;
@@ -149,7 +152,7 @@ button.eye-btn svg { width: 20px; height: 20px; display: block; }
 }
 
 /* 6. APP LAYOUT ---------------------------------------------------------- */
-.screen { height: 100%; }
+.screen { flex: 1; min-height: 0; }
 #app-screen { display: flex; }
 
 /* dark green side panel */
@@ -160,7 +163,7 @@ button.eye-btn svg { width: 20px; height: 20px; display: block; }
   color: var(--cream);
 }
 .sidebar .brand { padding: 20px 18px 16px; }
-.sidebar-top { display: flex; gap: 8px; padding: 0 14px 14px; border-bottom: 0.5px solid rgba(244, 224, 202, 0.1); }
+.sidebar-top { display: flex; gap: 8px; padding: 14px 14px 14px; border-top: 0.5px solid rgba(244, 224, 202, 0.1); border-bottom: 0.5px solid rgba(244, 224, 202, 0.1); }
 .sidebar-top input {
   background: rgba(244, 224, 202, 0.07);
   border: 1px solid rgba(244, 224, 202, 0.15);
@@ -283,7 +286,7 @@ hr { border: 0; border-top: 1px solid rgba(49, 61, 42, 0.12); margin: 18px 0 14p
 
 /* banner: dark green card in the top-right corner */
 .update-banner {
-  position: fixed; top: 18px; right: 18px; z-index: 9000;
+  position: fixed; top: calc(var(--titlebar-h) + 14px); right: 18px; z-index: 9000;
   width: 400px; max-width: calc(100vw - 36px);
   display: flex; align-items: flex-start; gap: 12px;
   padding: 14px 16px;
@@ -319,7 +322,152 @@ button.later:hover { background: rgba(244, 224, 202, 0.08); color: var(--cream);
 .update-text.ok { color: var(--positive); }
 .update-text.err { color: var(--negative); }
 
-/* 8. TOAST --------------------------------------------------------------- */
+/* 8. TITLE BAR & MENUS --------------------------------------------------- */
+.titlebar {
+  flex: none;
+  height: var(--titlebar-h);
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 150px 0 12px; /* right side is kept clear for the minimise / maximise / close buttons */
+  background: var(--green);
+  color: var(--cream);
+  -webkit-app-region: drag; /* drag here to move the window */
+  position: relative; z-index: 9500;
+}
+body.mac .titlebar { padding-left: 84px; padding-right: 12px; } /* room for the Mac traffic lights */
+.titlebar-brand { display: flex; align-items: center; gap: 8px; }
+.titlebar-brand img { width: 20px; height: 20px; border-radius: 6px; }
+.titlebar-brand span {
+  font-family: var(--font-display); font-weight: 700; font-size: 12.5px;
+  letter-spacing: 0.1em; text-transform: uppercase; color: rgba(244, 224, 202, 0.85);
+}
+.titlebar-brand em { font-style: normal; color: var(--tan); }
+.menubar { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+body.mac .menubar { display: none; } /* Mac uses the menu bar at the top of the screen */
+.menu-root { position: relative; }
+button.menu-top {
+  height: 28px; padding: 0 11px; font-size: 12.5px;
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  color: rgba(244, 224, 202, 0.75);
+}
+button.menu-top:hover, button.menu-top.open {
+  background: rgba(244, 224, 202, 0.1); border-color: rgba(244, 224, 202, 0.15); color: var(--cream);
+}
+.menu-pop {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  min-width: 230px; padding: 5px;
+  display: flex; flex-direction: column;
+  background: var(--white);
+  border: 1px solid rgba(49, 61, 42, 0.12);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-menu);
+  animation: menu-drop 0.12s ease;
+}
+.menu-pop.hidden { display: none; }
+@keyframes menu-drop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+button.menu-item {
+  height: 34px; width: 100%; padding: 0 10px;
+  justify-content: space-between; gap: 24px;
+  font-size: 13px; color: var(--text-dark);
+  background: transparent; border: none; border-radius: 7px;
+}
+button.menu-item:hover, button.menu-item:focus-visible { background: rgba(197, 168, 130, 0.18); border: none; outline: none; }
+button.menu-item:disabled { color: rgba(26, 34, 19, 0.35); background: transparent; cursor: default; opacity: 1; }
+.menu-item kbd { font-family: var(--font-body); font-size: 11px; color: var(--text-muted); }
+.menu-item:disabled kbd { color: rgba(107, 124, 94, 0.45); }
+.menu-sep { height: 1px; background: rgba(49, 61, 42, 0.08); margin: 4px 6px; }
+
+/* 9. SYNC ---------------------------------------------------------------- */
+select {
+  width: 100%; height: 40px; padding: 0 12px;
+  font: inherit; font-size: 13.5px; color: var(--text-dark);
+  background: #fff; border: 1px solid rgba(49, 61, 42, 0.2); border-radius: var(--radius-small);
+  outline: none; cursor: pointer;
+}
+select:focus { border-color: var(--tan); }
+.create-location { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.create-location label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+.hint { font-size: 11.5px; color: var(--text-muted); }
+
+button.link-btn {
+  display: block; width: 100%; text-align: center; line-height: 1.5;
+  height: auto; padding: 6px 8px; margin-top: 10px;
+  background: none; border: none; border-radius: 6px;
+  font-size: 12.5px; color: var(--text-muted); white-space: normal;
+}
+button.link-btn strong { color: var(--green); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--tan); }
+button.link-btn:hover { background: var(--tint-2); border: none; color: var(--green); }
+
+.sync-pill {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+  padding: 3px 11px; border-radius: var(--radius-pill);
+  font-size: 11.5px; font-weight: 500; color: var(--green);
+  background: rgba(197, 168, 130, 0.18); border: 1px solid rgba(197, 168, 130, 0.4);
+}
+.sync-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--positive); }
+
+.missing-panel { display: flex; flex-direction: column; gap: 10px; margin-top: 22px; text-align: left; }
+.missing-panel p {
+  overflow-wrap: anywhere;
+  font-size: 12.5px; line-height: 1.55; color: #5a4710; padding: 10px 12px;
+  border-radius: var(--radius-control); background: rgba(212, 167, 44, 0.12); box-shadow: inset 3px 0 0 var(--warning);
+}
+.missing-panel button { height: 42px; }
+.missing-panel button.link-btn { height: auto; margin-top: 0; }
+
+.sync-path {
+  display: block; margin-top: 2px; font-size: 11.5px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+button.inline-link {
+  height: auto; padding: 0; margin-left: 4px; background: none; border: none;
+  font-size: 12.5px; color: var(--green); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--tan);
+}
+button.inline-link:hover { background: none; border: none; color: var(--green-light); }
+
+.sync-how {
+  margin-top: 14px; padding: 10px 12px; font-size: 12.5px; line-height: 1.55; color: var(--text-dark);
+  background: var(--tint-1); border: 1px solid rgba(49, 61, 42, 0.06); border-radius: var(--radius-control);
+}
+.sync-how em { font-style: normal; color: var(--green); font-weight: 500; }
+
+/* pop-up */
+.overlay {
+  position: fixed; inset: 0; z-index: 9800;
+  background: rgba(26, 34, 19, 0.45); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.modal {
+  background: var(--white); border-radius: 18px; box-shadow: var(--shadow-modal);
+  width: min(520px, 100%); max-height: calc(100vh - 80px); overflow: auto; padding: 26px;
+  animation: menu-drop 0.15s ease;
+}
+.modal-title { font-family: var(--font-display); font-size: 1.45rem; font-weight: 700; color: var(--green); }
+.modal-sub { font-size: 13px; color: var(--text-muted); margin: 4px 0 16px; line-height: 1.5; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.modal .field { margin: 14px 0 0; }
+.modal .error { margin-top: 10px; }
+
+.provider-list { display: flex; flex-direction: column; gap: 8px; }
+button.provider {
+  width: 100%; height: auto; min-height: 58px; padding: 10px 12px;
+  justify-content: flex-start; gap: 12px; text-align: left; white-space: normal;
+  background: #fff; border: 1px solid rgba(49, 61, 42, 0.14); border-radius: 12px;
+}
+button.provider:hover { background: rgba(197, 168, 130, 0.1); border-color: rgba(197, 168, 130, 0.6); }
+button.provider.selected { border-color: var(--green); background: rgba(197, 168, 130, 0.16); box-shadow: inset 0 0 0 1px var(--green); }
+button.provider.other { margin-top: 8px; border-style: dashed; }
+.provider-icon {
+  width: 36px; height: 36px; flex: none; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; font-size: 13px;
+  background: var(--green); color: var(--cream);
+}
+.provider.other .provider-icon { background: rgba(197, 168, 130, 0.25); color: var(--green); }
+.provider-name { display: block; font-size: 13.5px; font-weight: 600; color: var(--text-dark); }
+.provider-path { display: block; font-size: 11.5px; color: var(--text-muted); word-break: break-all; margin-top: 1px; }
+.provider-empty { font-size: 12.5px; color: var(--text-muted); padding: 10px 12px; background: var(--tint-1); border-radius: 10px; line-height: 1.5; }
+
+/* 10. TOAST -------------------------------------------------------------- */
 .toast {
   position: fixed; bottom: 2rem; right: 2rem; z-index: 10000;
   background: var(--green); color: var(--cream);

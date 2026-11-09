@@ -4,7 +4,7 @@ An offline, encrypted password manager for Windows and Mac.
 
 ## Features
 - One master password unlocks everything. It is never stored anywhere.
-- Your vault is encrypted with **AES-256-GCM**. The key comes from your master password via **scrypt**. The vault never leaves your computer: no cloud, no account.
+- Your vault is encrypted with **AES-256-GCM**. The key comes from your master password via **scrypt**. There's no account and no Password Vault server. The vault stays on your computer, or in your own cloud drive if you turn on sync.
 - Add, edit, delete and search your logins (name, username, password, website, notes).
 - Built-in strong password generator and a strength meter.
 - Copied passwords are **wiped from the clipboard after 30 seconds**.
@@ -14,12 +14,29 @@ An offline, encrypted password manager for Windows and Mac.
 > ⚠️ If you forget your master password, your data **cannot be recovered**.
 
 ## Where your data lives
-- Windows: `%APPDATA%\Password Vault\vault.json`
-- Mac: `~/Library/Application Support/Password Vault/vault.json`
+- **Not syncing:** Windows `%APPDATA%\Password Vault\vault.json`, Mac `~/Library/Application Support/Password Vault/vault.json`
+- **Syncing:** a `Password Vault` folder in the cloud drive you chose, for example `OneDrive\Password Vault\vault.json`
 
-A `vault.json.bak` copy of the previous save is kept beside it. Both files are encrypted.
-To back up, copy `vault.json` somewhere safe, such as a USB stick.
-To move to another computer, put that file in the same location there.
+Backups stay on each computer in the `backups` folder next to the "not syncing" location above. Every file is encrypted.
+
+## Syncing between computers
+Your passwords can be shared between your Mac and Windows computers through a cloud drive you already use: **iCloud Drive, OneDrive, Google Drive or Dropbox**. Password Vault finds these automatically. You can also pick any folder your cloud app keeps in sync.
+
+**First computer**
+- **New vault:** under **Where to keep your vault**, pick your cloud drive.
+- **Existing vault:** go to **Settings → Sync between your computers → Set up sync**, pick the drive, and confirm with your master password.
+
+**Other computers**
+1. Install the cloud drive's app and sign in.
+2. Open Password Vault and click **Already use Password Vault on another computer? Connect to it**.
+3. Pick the same drive and unlock with the same master password.
+
+**How it behaves**
+- **Speed:** changes show up on your other computers within a few seconds of the cloud drive syncing them, even while the app is open.
+- **Simultaneous edits:** if you edit on two computers before they sync, both sets of changes are kept. For the same login, the newest edit wins. Deleted logins stay deleted.
+- **Master password changes:** your other computers lock and ask for the new password.
+- **Privacy:** the cloud company only ever sees the encrypted file.
+- **Stopping:** **Settings → Stop syncing** keeps a copy on that computer only.
 
 ## Installing on Windows
 Run `dist\Password-Vault-Setup-<version>.exe`. The app isn't code-signed, so Windows SmartScreen may warn you. Click **More info → Run anyway**.
@@ -27,12 +44,9 @@ Run `dist\Password-Vault-Setup-<version>.exe`. The app isn't code-signed, so Win
 ## Building the Mac version
 Mac apps have to be built on a Mac. If you don't have one, GitHub can build it for free:
 
-1. Create a free GitHub account and a new **private** repository.
-2. Upload this folder to it, leaving out `node_modules` and `dist`.
-3. Open the repo's **Actions** tab → **Build and release** → **Run workflow**.
-4. After about 5–10 minutes, open the repository's **Releases** page and download the `.dmg` file. The Windows installer is on the same page.
+GitHub builds the Mac version automatically each time a new version is released (see **Releasing an update** below). Download the `.dmg` file from the repository's **Releases** page. The Windows installer is on the same page.
 
-The Mac app isn't signed by Apple. The first time you open it, **right-click the app → Open → Open**. On newer macOS versions you may instead need to go to **System Settings → Privacy & Security → Open Anyway**.
+The Mac app isn't signed by Apple, so macOS blocks it the first time. Go to **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway**. If that button isn't there, run `xattr -dr com.apple.quarantine "/Applications/Password Vault.app"` in Terminal.
 
 If you do have a Mac: install Node.js, then run `npm install` and `npm run dist:mac` in this folder.
 
@@ -51,11 +65,12 @@ You can also go to **Settings → Check for updates**, or use the **Vault → Ch
 4. Install the version that has your username in it. Older copies don't know where to look for updates.
 
 ### Releasing an update
-1. Change `"version"` in `package.json`, for example `1.1.0` → `1.2.0`. The number must go up.
-2. Upload your changes to GitHub.
-3. On GitHub, go to **Actions → Build and release → Run workflow**.
+1. Change `"version"` in `package.json`, for example `1.2.0` → `1.3.0`. The number must go up.
+2. In GitHub Desktop, click **Commit to main**, then **Push origin**.
 
-After about 5–10 minutes, a new Release appears with the Windows and Mac installers. Every installed copy will then show the update notification.
+That's all. GitHub notices the new version number and builds and publishes the release automatically. After about 5–10 minutes, the Windows and Mac installers appear on the **Releases** page, and every installed copy shows the update notification. Progress shows in the repository's **Actions** tab.
+
+If you push without changing the version number, nothing is released; the Actions run just says "already released". To re-run a release by hand, go to **Actions → Build and release → Run workflow**.
 
 ## For developers
 ```

@@ -7,12 +7,62 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- Title bar: green strip with the app's own menus (drag it to move the window) -->
+  <header id="titlebar" class="titlebar">
+    <div class="titlebar-brand">
+      <img src="logo.svg" alt="" />
+      <span>Password <em>Vault</em></span>
+    </div>
+    <nav id="menubar" class="menubar" aria-label="Menu">
+      <div class="menu-root">
+        <button type="button" class="menu-top" data-menu="vault">Vault</button>
+        <div class="menu-pop hidden" data-pop="vault" role="menu">
+          <button type="button" class="menu-item" data-action="lock" data-needs="unlocked">Lock now <kbd>Ctrl+L</kbd></button>
+          <button type="button" class="menu-item" data-action="checkUpdates">Check for updates…</button>
+          <div class="menu-sep"></div>
+          <button type="button" class="menu-item" data-action="quit">Quit Password Vault</button>
+        </div>
+      </div>
+      <div class="menu-root">
+        <button type="button" class="menu-top" data-menu="edit">Edit</button>
+        <div class="menu-pop hidden" data-pop="edit" role="menu">
+          <button type="button" class="menu-item" data-action="undo">Undo <kbd>Ctrl+Z</kbd></button>
+          <button type="button" class="menu-item" data-action="redo">Redo <kbd>Ctrl+Y</kbd></button>
+          <div class="menu-sep"></div>
+          <button type="button" class="menu-item" data-action="cut">Cut <kbd>Ctrl+X</kbd></button>
+          <button type="button" class="menu-item" data-action="copy">Copy <kbd>Ctrl+C</kbd></button>
+          <button type="button" class="menu-item" data-action="paste">Paste <kbd>Ctrl+V</kbd></button>
+          <button type="button" class="menu-item" data-action="selectAll">Select all <kbd>Ctrl+A</kbd></button>
+        </div>
+      </div>
+      <div class="menu-root">
+        <button type="button" class="menu-top" data-menu="window">Window</button>
+        <div class="menu-pop hidden" data-pop="window" role="menu">
+          <button type="button" class="menu-item" data-action="minimize">Minimise</button>
+          <button type="button" class="menu-item" data-action="maximize" id="menu-maximize">Maximise</button>
+          <div class="menu-sep"></div>
+          <button type="button" class="menu-item" data-action="close">Close window</button>
+        </div>
+      </div>
+    </nav>
+  </header>
+
   <!-- Lock screen -->
   <section id="lock-screen" class="screen">
     <div class="lock-card">
       <img class="lock-logo" src="logo.svg" alt="" />
       <h1>Password <em>Vault</em></h1>
       <p id="lock-subtitle" class="page-sub"></p>
+      <div id="lock-sync" class="sync-pill hidden"></div>
+
+      <!-- Shown when the synced vault can't be found (cloud drive not running yet, etc.) -->
+      <div id="missing-panel" class="missing-panel hidden">
+        <p id="missing-text"></p>
+        <button type="button" id="missing-retry" class="primary">Try again</button>
+        <button type="button" id="missing-find">Find my vault in another folder</button>
+        <button type="button" id="missing-local" class="link-btn">Start a new vault on this computer instead</button>
+      </div>
+
       <form id="lock-form" autocomplete="off">
         <div class="pw-wrap">
           <input id="master" type="password" placeholder="Master password" autofocus />
@@ -25,19 +75,21 @@
         <div id="create-warning" class="warning hidden">
           Choose something long and memorable. <strong>If you forget your master password, your passwords cannot be recovered</strong> — not even by you.
         </div>
+        <div id="create-location-wrap" class="create-location hidden">
+          <label for="create-location">Where to keep your vault</label>
+          <select id="create-location"></select>
+          <p class="hint">Pick a cloud drive to use the same passwords on your other computers.</p>
+        </div>
         <button id="lock-submit" type="submit" class="primary"></button>
         <p id="lock-error" class="error" role="alert"></p>
       </form>
+      <button type="button" id="connect-link" class="link-btn hidden">Already use Password Vault on another computer? <strong>Connect to it</strong></button>
     </div>
   </section>
 
   <!-- Main app -->
   <section id="app-screen" class="screen hidden">
     <aside class="sidebar">
-      <div class="brand">
-        <img src="logo.svg" alt="" />
-        <span class="brand-text">Password <span class="accent">Vault</span></span>
-      </div>
       <div class="sidebar-top">
         <input id="search" type="search" placeholder="Search…" />
         <button id="add-btn" class="add-btn" title="Add a new password">+ Add</button>
@@ -151,6 +203,24 @@
           </div>
         </div>
 
+        <div class="card update-card">
+          <div class="card-title">Sync between your computers</div>
+          <div class="update-row">
+            <div>
+              <div id="sync-where" class="update-version"></div>
+              <div class="update-text"><span id="sync-detail"></span><button type="button" id="sync-open-folder" class="inline-link hidden">Show folder</button></div>
+              <span id="sync-path" class="sync-path hidden"></span>
+            </div>
+            <div class="actions">
+              <button type="button" id="sync-setup" class="primary"></button>
+              <button type="button" id="sync-stop" class="hidden">Stop syncing</button>
+            </div>
+          </div>
+          <div id="sync-how" class="sync-how hidden">
+            <strong>On your other computer:</strong> install Password Vault, choose <em>“Already use Password Vault on another computer? Connect to it”</em>, pick the same cloud drive, and unlock with this master password.
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-title">Change master password</div>
           <div class="field"><label for="s-current">Current master password</label><input id="s-current" type="password" /></div>
@@ -167,6 +237,31 @@
       </form>
     </main>
   </section>
+
+  <!-- Sync set-up pop-up: pick a cloud drive -->
+  <div id="sync-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="sync-modal-title">
+    <form id="sync-form" class="modal" autocomplete="off">
+      <h3 id="sync-modal-title" class="modal-title"></h3>
+      <p id="sync-modal-text" class="modal-sub"></p>
+      <div id="provider-list" class="provider-list" role="radiogroup"></div>
+      <button type="button" id="provider-other" class="provider other">
+        <span class="provider-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span>
+        <span><span class="provider-name">Choose another folder…</span><span id="provider-other-path" class="provider-path">Any folder your cloud app keeps in sync</span></span>
+      </button>
+      <div id="sync-pw-wrap" class="field hidden">
+        <label for="sync-pw">Master password</label>
+        <div class="pw-wrap">
+          <input id="sync-pw" type="password" placeholder="Confirm it's you" />
+          <button type="button" class="eye-btn" data-target="sync-pw" title="Show password" aria-label="Show password"></button>
+        </div>
+      </div>
+      <p id="sync-error" class="error" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="sync-cancel">Cancel</button>
+        <button type="submit" id="sync-submit" class="primary"></button>
+      </div>
+    </form>
+  </div>
 
   <!-- "Update available" banner (shows on every screen) -->
   <div id="update-banner" class="update-banner hidden" role="status">

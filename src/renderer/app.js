@@ -55,25 +55,70 @@ document.querySelectorAll('.eye-btn').forEach((btn) => {
 });
 
 // ---------- lock screen ----------
+let providers = [];
+
 async function showLockScreen(message) {
-  const { exists } = await window.api.status();
-  creating = !exists;
+  const status = await window.api.status();
+  creating = !status.exists && !status.missing;
   hide($('app-screen'));
   show($('lock-screen'));
+  closeSyncModal();
   $('master').value = '';
   $('master-confirm').value = '';
   $('lock-error').textContent = message || '';
+  document.querySelectorAll('.eye-btn').forEach((btn) => setEye(btn, false));
+  entries = [];
+  selectedId = null;
+
+  // Synced vault that can't be found right now.
+  $('missing-panel').classList.toggle('hidden', !status.missing);
+  $('lock-form').classList.toggle('hidden', status.missing);
+  $('connect-link').classList.toggle('hidden', !creating);
+  $('lock-sync').classList.toggle('hidden', !status.sync.synced || status.missing);
+  $('lock-sync').textContent = `Synced via ${status.sync.name}`;
+  if (status.missing) {
+    $('lock-subtitle').textContent = `We can't find your vault in ${status.sync.name}.`;
+    $('missing-text').textContent = `Make sure ${status.sync.name} is running and has finished syncing on this computer, then try again. (Looking in ${status.sync.path})`;
+    return;
+  }
+
   $('lock-subtitle').textContent = creating
     ? 'Create a master password to set up your vault.'
     : 'Enter your master password to unlock.';
   $('lock-submit').textContent = creating ? 'Create vault' : 'Unlock';
   $('master-confirm-wrap').classList.toggle('hidden', !creating);
-  document.querySelectorAll('.eye-btn').forEach((btn) => setEye(btn, false));
   $('create-warning').classList.toggle('hidden', !creating);
-  entries = [];
-  selectedId = null;
+  $('create-location-wrap').classList.toggle('hidden', !creating);
+  if (creating) await fillCreateLocations();
   $('master').focus();
 }
+
+async function fillCreateLocations() {
+  providers = await window.api.syncProviders();
+  const select = $('create-location');
+  select.replaceChildren();
+  const add = (value, label) => {
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = label;
+    select.appendChild(o);
+  };
+  add('', 'This computer only');
+  providers.forEach((p, i) => add(String(i), `${p.name} — sync with my other computers`));
+  add('other', 'Another synced folder…');
+}
+
+$('create-location').addEventListener('change', async () => {
+  if ($('create-location').value !== 'other') return;
+  const folder = await window.api.syncChooseFolder();
+  if (!folder) return ($('create-location').value = '');
+  providers.push({ id: 'folder', name: folder.split(/[\\/]/).pop() || folder, path: folder });
+  const o = document.createElement('option');
+  o.value = String(providers.length - 1);
+  o.textContent = `${folder} — sync with my other computers`;
+  $('create-location').insertBefore(o, $('create-location').lastElementChild);
+  $('create-location').value = o.value;
+});
 
 $('lock-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -90,7 +135,23 @@ $('lock-form').addEventListener('submit', async (e) => {
   const original = btn.textContent;
   btn.textContent = creating ? 'Creating…' : 'Unlocking…';
   try {
-    const res = creating ? await window.api.create(pw) : await window.api.unlock(pw);
+    let res;
+    if (creating) {
+      const choice = $('create-location').value;
+      const provider = choice && choice !== 'other' ? providers[Number(choice)] : null;
+      res = await window.api.create(pw, provider ? provider.path : undefined);
+      if (res.existing) {
+        // A vault is already in that cloud drive (set up on another computer): unlock that one.
+        res = await window.api.unlock(pw);
+        if (!res.ok) {
+          await showLockScreen(`You already have a vault in ${provider.name}. Unlock it with the master password you chose on your other computer.`);
+          return;
+        }
+        toast(`Connected to your vault in ${provider.name}`);
+      }
+    } else {
+      res = await window.api.unlock(pw);
+    }
     if (!res.ok) {
       $('lock-error').textContent = res.error;
       $('master').select();
@@ -101,6 +162,195 @@ $('lock-form').addEventListener('submit', async (e) => {
     btn.disabled = false;
     btn.textContent = original;
   }
+});
+
+$('connect-link').addEventListener('click', () => openSyncModal('connect'));
+$('missing-retry').addEventListener('click', () => showLockScreen());
+$('missing-find').addEventListener('click', () => openSyncModal('connect'));
+$('missing-local').addEventListener('click', async () => {
+  if (!confirm('Start a brand-new, empty vault on this computer? Your synced vault stays where it is, and you can connect to it again later.')) return;
+  await window.api.syncUseLocal();
+  showLockScreen();
+});
+
+// ---------- sync pop-up (connect to an existing vault, or turn sync on) ----------
+let syncMode = null; // 'connect' | 'enable'
+let syncChoice = null; // folder path
+
+function closeSyncModal() {
+  hide($('sync-modal'));
+  syncMode = null;
+}
+
+function initials(name) {
+  return name.replace(/\(.*\)/, '').split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function providerButton(name, detail, folder, iconText) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'provider';
+  b.setAttribute('role', 'radio');
+  const icon = document.createElement('span');
+  icon.className = 'provider-icon';
+  icon.textContent = iconText;
+  const text = document.createElement('span');
+  const n = document.createElement('span');
+  n.className = 'provider-name';
+  n.textContent = name;
+  const p = document.createElement('span');
+  p.className = 'provider-path';
+  p.textContent = detail;
+  text.append(n, p);
+  b.append(icon, text);
+  b.addEventListener('click', () => selectProvider(b, folder));
+  return b;
+}
+
+function selectProvider(btn, folder) {
+  document.querySelectorAll('#sync-modal .provider').forEach((x) => {
+    x.classList.toggle('selected', x === btn);
+    x.setAttribute('aria-checked', String(x === btn));
+  });
+  syncChoice = folder;
+  $('sync-error').textContent = '';
+  $('sync-submit').disabled = false;
+}
+
+async function openSyncModal(mode) {
+  syncMode = mode;
+  syncChoice = null;
+  const connect = mode === 'connect';
+  $('sync-modal-title').textContent = connect ? 'Connect to your vault' : 'Sync with your other computers';
+  $('sync-modal-text').textContent = connect
+    ? 'Choose the cloud drive where your other computer keeps Password Vault. You’ll then unlock it with the same master password.'
+    : 'Your vault will be kept in a “Password Vault” folder in the cloud drive you choose. It stays encrypted — the cloud company can’t read it.';
+  $('sync-submit').textContent = connect ? 'Connect' : 'Start syncing';
+  $('sync-submit').disabled = true;
+  $('sync-error').textContent = '';
+  $('sync-pw').value = '';
+  setEye(document.querySelector('[data-target="sync-pw"]'), false);
+  $('sync-pw-wrap').classList.toggle('hidden', connect);
+  $('provider-other-path').textContent = 'Any folder your cloud app keeps in sync';
+  $('provider-other').classList.remove('selected');
+
+  const list = $('provider-list');
+  list.replaceChildren();
+  providers = await window.api.syncProviders();
+  if (!providers.length) {
+    const p = document.createElement('p');
+    p.className = 'provider-empty';
+    p.textContent = 'No cloud drives found on this computer. Install iCloud, OneDrive, Google Drive or Dropbox and sign in — or choose a synced folder yourself below.';
+    list.appendChild(p);
+  }
+  const ICONS = { icloud: 'iC', onedrive: 'OD', 'onedrive-work': 'OD', gdrive: 'GD', dropbox: 'DB' };
+  for (const p of providers) list.appendChild(providerButton(p.name, p.path, p.path, ICONS[p.id] || initials(p.name)));
+  show($('sync-modal'));
+}
+
+$('provider-other').addEventListener('click', async () => {
+  const folder = await window.api.syncChooseFolder();
+  if (!folder) return;
+  $('provider-other-path').textContent = folder;
+  selectProvider($('provider-other'), folder);
+});
+
+$('sync-cancel').addEventListener('click', closeSyncModal);
+$('sync-modal').addEventListener('mousedown', (e) => {
+  if (e.target === $('sync-modal')) closeSyncModal();
+});
+
+$('sync-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!syncChoice) return ($('sync-error').textContent = 'Choose where your vault should be kept.');
+  const btn = $('sync-submit');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = syncMode === 'connect' ? 'Connecting…' : 'Setting up…';
+  try {
+    if (syncMode === 'connect') {
+      const res = await window.api.syncConnect(syncChoice);
+      if (!res.ok) {
+        $('sync-error').textContent =
+          'No Password Vault found there yet. On your other computer, open Settings → Sync and choose this cloud drive, then wait a minute for it to sync here.';
+        return;
+      }
+      closeSyncModal();
+      await showLockScreen();
+      toast(`Found your vault in ${res.where.name}. Unlock it to continue.`);
+    } else {
+      if (!$('sync-pw').value) return ($('sync-error').textContent = 'Enter your master password to confirm.');
+      const res = await window.api.syncEnable(syncChoice, $('sync-pw').value);
+      $('sync-pw').value = '';
+      if (!res.ok) {
+        if (!res.locked) $('sync-error').textContent = res.error;
+        return;
+      }
+      closeSyncModal();
+      await refreshEntries();
+      await renderSync();
+      toast(`Syncing via ${res.status.name}`);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
+
+// ---------- sync section in Settings ----------
+function timeAgo(iso) {
+  if (!iso) return 'not yet';
+  const s = Math.round((Date.now() - new Date(iso)) / 1000);
+  if (s < 45) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  return new Date(iso).toLocaleString();
+}
+
+async function renderSync(status) {
+  const s = status || (await window.api.syncStatus());
+  $('sync-where').textContent = s.synced ? `Syncing via ${s.name}` : 'This computer only';
+  $('sync-detail').textContent = s.synced
+    ? `Last synced ${timeAgo(s.lastSync)} ·`
+    : 'Turn on sync to use the same passwords on your other computers.';
+  $('sync-path').textContent = s.folder;
+  $('sync-path').title = s.folder;
+  $('sync-path').classList.toggle('hidden', !s.synced);
+  $('sync-open-folder').classList.toggle('hidden', !s.synced);
+  $('sync-setup').textContent = s.synced ? 'Change folder' : 'Set up sync';
+  $('sync-stop').classList.toggle('hidden', !s.synced);
+  $('sync-how').classList.toggle('hidden', !s.synced);
+}
+
+$('sync-setup').addEventListener('click', () => openSyncModal('enable'));
+$('sync-open-folder').addEventListener('click', () => window.api.syncShowFolder());
+$('sync-stop').addEventListener('click', async () => {
+  if (!confirm('Stop syncing? A copy of your vault will be kept on this computer only. Your other computers keep using the copy in the cloud drive.')) return;
+  const res = await window.api.syncDisable();
+  if (res.ok) {
+    await renderSync(res.status);
+    toast('Sync turned off on this computer');
+  }
+});
+
+window.api.onSyncStatus((s) => {
+  if (!$('settings-pane').classList.contains('hidden')) renderSync(s);
+});
+
+// Changes arrived from another computer.
+async function refreshEntries() {
+  entries = await window.api.list();
+  renderList();
+  const editing = !$('edit-pane').classList.contains('hidden');
+  if (selectedId && !entries.some((e) => e.id === selectedId)) {
+    selectedId = null;
+    if (!editing) showPane(null);
+  } else if (selectedId && !$('view-pane').classList.contains('hidden')) {
+    selectEntry(selectedId);
+  }
+}
+window.api.onChanged(() => {
+  if ($('app-screen').classList.contains('hidden')) return;
+  refreshEntries();
 });
 
 // ---------- main app ----------
@@ -276,6 +526,7 @@ $('edit-pane').addEventListener('submit', async (e) => {
     url: $('e-url').value,
     notes: $('e-notes').value,
   });
+  if (saved && saved.locked) return; // master password changed on another computer; lock screen explains
   entries = await window.api.list();
   toast('Saved');
   selectEntry(saved.id);
@@ -285,7 +536,8 @@ $('delete-btn').addEventListener('click', async () => {
   const e = current();
   if (!e) return;
   if (!confirm(`Delete "${e.title}"? This cannot be undone.`)) return;
-  await window.api.remove(e.id);
+  const res = await window.api.remove(e.id);
+  if (res && res.locked) return;
   entries = await window.api.list();
   selectedId = null;
   renderList();
@@ -297,6 +549,7 @@ $('delete-btn').addEventListener('click', async () => {
 $('settings-btn').addEventListener('click', () => {
   for (const id of ['s-current', 's-new', 's-confirm']) $(id).value = '';
   $('settings-msg').textContent = '';
+  renderSync();
   showPane('settings-pane');
   $('s-current').focus();
 });
@@ -324,7 +577,11 @@ $('settings-pane').addEventListener('submit', async (e) => {
 $('lock-btn').addEventListener('click', () => window.api.lock());
 
 window.api.onLocked((reason) => {
-  const messages = { idle: 'Locked after 5 minutes of inactivity.', system: 'Locked because your computer was locked or went to sleep.' };
+  const messages = {
+    idle: 'Locked after 5 minutes of inactivity.',
+    system: 'Locked because your computer was locked or went to sleep.',
+    'password-changed': 'Your master password was changed on another computer. Unlock with the new one.',
+  };
   showLockScreen(messages[reason] || '');
 });
 
@@ -438,8 +695,51 @@ $('check-updates-btn').addEventListener('click', () => {
 window.api.onUpdateStatus(setUpdate);
 window.api.updateStatus().then(setUpdate);
 
+// ---------- title bar menus (Vault / Edit / Window) ----------
+if (window.api.platform === 'darwin') document.body.classList.add('mac');
+let openMenu = null;
+
+function closeMenus() {
+  document.querySelectorAll('.menu-pop').forEach((p) => p.classList.add('hidden'));
+  document.querySelectorAll('.menu-top').forEach((b) => b.classList.remove('open'));
+  openMenu = null;
+}
+
+async function showMenu(name) {
+  closeMenus();
+  openMenu = name;
+  const unlocked = $('lock-screen').classList.contains('hidden');
+  document.querySelectorAll('[data-needs="unlocked"]').forEach((b) => (b.disabled = !unlocked));
+  if (name === 'window') $('menu-maximize').textContent = (await window.api.isMaximized()) ? 'Restore size' : 'Maximise';
+  document.querySelector(`[data-menu="${name}"]`).classList.add('open');
+  document.querySelector(`[data-pop="${name}"]`).classList.remove('hidden');
+}
+
+// Keep the text cursor where it was, so Edit → Paste goes into the field you were typing in.
+$('menubar').addEventListener('mousedown', (e) => e.preventDefault());
+
+document.querySelectorAll('.menu-top').forEach((btn) => {
+  btn.addEventListener('click', () => (openMenu === btn.dataset.menu ? closeMenus() : showMenu(btn.dataset.menu)));
+  // Once one menu is open, hovering the others switches between them (like a normal menu bar).
+  btn.addEventListener('mouseenter', () => openMenu && openMenu !== btn.dataset.menu && showMenu(btn.dataset.menu));
+});
+
+document.querySelectorAll('.menu-item').forEach((item) => {
+  item.addEventListener('click', () => {
+    closeMenus();
+    window.api.menuAction(item.dataset.action);
+  });
+});
+
+document.addEventListener('mousedown', (e) => {
+  if (openMenu && !e.target.closest('#menubar')) closeMenus();
+});
+window.addEventListener('blur', closeMenus);
+
 // Escape closes editor/settings.
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && openMenu) return closeMenus();
+  if (e.key === 'Escape' && syncMode) return closeSyncModal();
   if (e.key === 'Escape' && !$('app-screen').classList.contains('hidden')) {
     if (!$('edit-pane').classList.contains('hidden') || !$('settings-pane').classList.contains('hidden')) {
       selectedId ? selectEntry(selectedId) : showPane(null);
