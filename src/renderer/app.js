@@ -56,8 +56,12 @@ document.querySelectorAll('.eye-btn').forEach((btn) => {
 
 // ---------- lock screen ----------
 let providers = [];
+let lockScreenShownBefore = false;
 
 async function showLockScreen(message) {
+  // Only the very first lock screen after the app opens may pop up Touch ID / Windows Hello by itself.
+  const appJustOpened = !lockScreenShownBefore;
+  lockScreenShownBefore = true;
   const status = await window.api.status();
   creating = !status.exists && !status.missing;
   hide($('app-screen'));
@@ -91,7 +95,120 @@ async function showLockScreen(message) {
   $('create-location-wrap').classList.toggle('hidden', !creating);
   if (creating) await fillCreateLocations();
   $('master').focus();
+  await updateBioButton(appJustOpened && !message);
 }
+
+// ---------- Touch ID / Windows Hello ----------
+async function updateBioButton(mayAutoPrompt) {
+  hide($('bio-btn'));
+  if (creating) return;
+  const bio = await window.api.bioStatus();
+  if (!bio.enabled || !bio.available) return;
+  if (bio.needsPassword) {
+    if (!$('lock-error').textContent) {
+      $('lock-error').textContent =
+        bio.reason === 'expired'
+          ? `Enter your master password — ${bio.name} needs it once a week.`
+          : `Your master password changed. Enter it once to keep using ${bio.name}.`;
+    }
+    return;
+  }
+  $('bio-btn-label').textContent = `Unlock with ${bio.name}`;
+  show($('bio-btn'));
+  // When the app first opens, ask straight away so you can just touch the sensor.
+  if (mayAutoPrompt) bioUnlock();
+}
+
+let bioBusy = false;
+async function bioUnlock() {
+  if (bioBusy) return;
+  bioBusy = true;
+  const btn = $('bio-btn');
+  btn.disabled = true;
+  $('lock-error').textContent = '';
+  try {
+    const res = await window.api.bioUnlock();
+    if (res.ok) return openApp();
+    if (res.needsPassword) {
+      hide(btn);
+      $('lock-error').textContent = res.error;
+      $('master').focus();
+    }
+    // cancelled: just leave both options on screen
+  } finally {
+    btn.disabled = false;
+    bioBusy = false;
+  }
+}
+
+$('bio-btn').addEventListener('click', bioUnlock);
+
+async function renderBio() {
+  const bio = await window.api.bioStatus();
+  $('bio-card').classList.toggle('hidden', !bio.available);
+  if (!bio.available) return;
+  $('bio-card-title').textContent = `Unlock with ${bio.name}`;
+  const what = bio.platform === 'darwin' ? 'your fingerprint' : 'your fingerprint, face or PIN';
+  if (bio.enabled) {
+    $('bio-where').textContent = `${bio.name} is on`;
+    $('bio-detail').textContent = `Unlock with ${what}. You'll still be asked for your master password once a week.`;
+    $('bio-toggle').textContent = 'Turn off';
+    $('bio-toggle').classList.remove('primary');
+  } else {
+    $('bio-where').textContent = `${bio.name} is off`;
+    $('bio-detail').textContent = `Unlock Password Vault with ${what} instead of typing your master password.`;
+    $('bio-toggle').textContent = 'Turn on';
+    $('bio-toggle').classList.add('primary');
+  }
+  $('bio-toggle').dataset.enabled = bio.enabled ? '1' : '';
+  $('bio-toggle').dataset.name = bio.name;
+}
+
+$('bio-toggle').addEventListener('click', async () => {
+  const name = $('bio-toggle').dataset.name;
+  if ($('bio-toggle').dataset.enabled) {
+    await window.api.bioDisable();
+    toast(`${name} turned off`);
+    return renderBio();
+  }
+  $('bio-modal-title').textContent = `Turn on ${name}`;
+  $('bio-modal-text').textContent = `Enter your master password. ${name} will then ask you to confirm it's you.`;
+  $('bio-pw').value = '';
+  $('bio-error').textContent = '';
+  setEye(document.querySelector('[data-target="bio-pw"]'), false);
+  show($('bio-modal'));
+  $('bio-pw').focus();
+});
+
+function closeBioModal() {
+  hide($('bio-modal'));
+  $('bio-pw').value = '';
+}
+$('bio-cancel').addEventListener('click', closeBioModal);
+$('bio-modal').addEventListener('mousedown', (e) => {
+  if (e.target === $('bio-modal')) closeBioModal();
+});
+
+$('bio-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('bio-submit');
+  btn.disabled = true;
+  btn.textContent = 'Waiting…';
+  try {
+    const res = await window.api.bioEnable($('bio-pw').value);
+    if (!res.ok) {
+      $('bio-error').textContent = res.error;
+      return;
+    }
+    closeBioModal();
+    await afterRepaint();
+    await renderBio();
+    toast(`${$('bio-toggle').dataset.name} is on`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Turn on';
+  }
+});
 
 async function fillCreateLocations() {
   providers = await window.api.syncProviders();
@@ -554,6 +671,7 @@ $('settings-btn').addEventListener('click', () => {
   for (const id of ['s-current', 's-new', 's-confirm']) $(id).value = '';
   $('settings-msg').textContent = '';
   renderSync();
+  renderBio();
   showPane('settings-pane');
   $('s-current').focus();
 });
@@ -744,6 +862,7 @@ window.addEventListener('blur', closeMenus);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && openMenu) return closeMenus();
   if (e.key === 'Escape' && syncMode) return closeSyncModal();
+  if (e.key === 'Escape' && !$('bio-modal').classList.contains('hidden')) return closeBioModal();
   if (e.key === 'Escape' && !$('app-screen').classList.contains('hidden')) {
     if (!$('edit-pane').classList.contains('hidden') || !$('settings-pane').classList.contains('hidden')) {
       selectedId ? selectEntry(selectedId) : showPane(null);

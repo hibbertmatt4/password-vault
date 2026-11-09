@@ -127,6 +127,40 @@ class Vault {
     return true;
   }
 
+  /** Unlock with a previously derived key (Touch ID / Windows Hello). False if it no longer fits. */
+  unlockWithKey(key) {
+    const { file, hash } = this._read();
+    let data;
+    try {
+      data = normalize(decrypt(key, file.vault));
+    } catch {
+      return false; // master password was changed since the key was stored
+    }
+    this.salt = Buffer.from(file.salt, 'base64');
+    this.kdf = file.kdf;
+    this.key = Buffer.from(key);
+    this.data = data;
+    this.lastHash = hash;
+    this.lastSync = new Date();
+    this.mergeConflictCopies();
+    return true;
+  }
+
+  /** What Touch ID / Windows Hello needs to store (only while unlocked). */
+  keyInfo() {
+    this._requireUnlocked();
+    return { key: Buffer.from(this.key), salt: this.salt.toString('base64'), filePath: this.filePath };
+  }
+
+  /** The salt in the file on disk (identifies which master password it was made with). */
+  fileSalt() {
+    try {
+      return this._read().file.salt;
+    } catch {
+      return null;
+    }
+  }
+
   lock() {
     if (this.key) this.key.fill(0);
     this.key = null;

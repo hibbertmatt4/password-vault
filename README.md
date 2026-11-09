@@ -13,6 +13,14 @@ An offline, encrypted password manager for Windows and Mac.
 
 > ⚠️ If you forget your master password, your data **cannot be recovered**.
 
+## Unlock with Touch ID or Windows Hello
+On a Mac with **Touch ID**, or a Windows PC with **Windows Hello** (fingerprint reader, face camera or Hello PIN), go to **Settings → Unlock with Touch ID / Windows Hello → Turn on**. Confirm with your master password and your fingerprint or face.
+
+- **Unlocking:** the lock screen shows **Unlock with Touch ID / Windows Hello**. When the app opens, it asks straight away.
+- **Master password still needed:** once a week, after the master password is changed on any of your computers, and whenever you turn the feature off and on again.
+- **Per computer:** it's set up separately on each computer, and the option only appears where the hardware is available.
+- **How it's protected:** your vault key is kept sealed by the operating system (Mac Keychain / Windows protected storage) and only released after Touch ID or Windows Hello confirms it's you.
+
 ## Where your data lives
 - **Not syncing:** Windows `%APPDATA%\Password Vault\vault.json`, Mac `~/Library/Application Support/Password Vault/vault.json`
 - **Syncing:** a `Password Vault` folder in the cloud drive you chose, for example `OneDrive\Password Vault\vault.json`

@@ -81,6 +81,10 @@
           <p class="hint">Pick a cloud drive to use the same passwords on your other computers.</p>
         </div>
         <button id="lock-submit" type="submit" class="primary"></button>
+        <button id="bio-btn" type="button" class="bio-btn hidden">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3.5"/><path d="M8.5 12.5c0-2 1.6-3.5 3.5-3.5s3.5 1.5 3.5 3.5V14c0 2.4-.8 4.4-2 6"/><path d="M5.5 15.5c.3-1 .5-2 .5-3a6 6 0 0 1 9.3-5"/><path d="M18 9.5c.3.9.5 1.9.5 3 0 2.6-.5 5-1.5 7"/><path d="M9.5 20c.9-1.6 1.5-3.4 1.5-5.5"/><path d="M4 9.5A9 9 0 0 1 16.5 4.3"/></svg>
+          <span id="bio-btn-label">Unlock with Touch ID</span>
+        </button>
         <p id="lock-error" class="error" role="alert"></p>
       </form>
       <button type="button" id="connect-link" class="link-btn hidden">Already use Password Vault on another computer? <strong>Connect to it</strong></button>
@@ -203,6 +207,19 @@
           </div>
         </div>
 
+        <div id="bio-card" class="card update-card hidden">
+          <div id="bio-card-title" class="card-title">Unlock with Touch ID</div>
+          <div class="update-row">
+            <div>
+              <div id="bio-where" class="update-version"></div>
+              <div id="bio-detail" class="update-text"></div>
+            </div>
+            <div class="actions">
+              <button type="button" id="bio-toggle" class="primary"></button>
+            </div>
+          </div>
+        </div>
+
         <div class="card update-card">
           <div class="card-title">Sync between your computers</div>
           <div class="update-row">
@@ -259,6 +276,26 @@
       <div class="modal-actions">
         <button type="button" id="sync-cancel">Cancel</button>
         <button type="submit" id="sync-submit" class="primary"></button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Turn on Touch ID / Windows Hello: confirm master password -->
+  <div id="bio-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="bio-modal-title">
+    <form id="bio-form" class="modal" autocomplete="off">
+      <h3 id="bio-modal-title" class="modal-title"></h3>
+      <p id="bio-modal-text" class="modal-sub"></p>
+      <div class="field">
+        <label for="bio-pw">Master password</label>
+        <div class="pw-wrap">
+          <input id="bio-pw" type="password" placeholder="Confirm it's you" />
+          <button type="button" class="eye-btn" data-target="bio-pw" title="Show password" aria-label="Show password"></button>
+        </div>
+      </div>
+      <p id="bio-error" class="error" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" id="bio-cancel">Cancel</button>
+        <button type="submit" id="bio-submit" class="primary">Turn on</button>
       </div>
     </form>
   </div>

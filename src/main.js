@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { Vault, generatePassword } = require('./vault');
 const sync = require('./sync');
+const biometric = require('./biometric');
 const updater = require('./updater');
 
 const AUTO_LOCK_SECONDS = 5 * 60; // lock after 5 minutes of computer inactivity
@@ -228,6 +229,7 @@ function registerIpc() {
         fs.renameSync(oldPath, path.join(backupDir, `vault.before-sync-${Date.now()}.json`));
       }
       send('vault:changed');
+      biometric.refresh(vault.keyInfo()); // vault moved: Touch ID / Hello follows it
       return { ok: true, status: syncStatus() };
     })
   );
@@ -246,6 +248,7 @@ function registerIpc() {
       vault.writeTo(localPath);
       setVaultPath(null);
       watchVault();
+      biometric.refresh(vault.keyInfo());
       return { ok: true, status: syncStatus() };
     })
   );
@@ -270,6 +273,46 @@ function registerIpc() {
     }
     failedAttempts = 0;
     checkForRemoteChanges(); // catch anything the other computer saved while we were unlocking
+    biometric.refresh(vault.keyInfo()); // master password used: restart the Touch ID / Hello 7-day clock
+    return { ok: true };
+  });
+
+  // ---------- Touch ID / Windows Hello ----------
+  const bioVaultInfo = () => ({ filePath: vault.filePath, salt: vault.isUnlocked() ? vault.keyInfo().salt : vault.fileSalt() });
+
+  ipcMain.handle('bio:status', () => biometric.status(vault.exists() ? bioVaultInfo() : null));
+
+  // Turn on: confirm the master password, then a fingerprint/face so we know it works.
+  ipcMain.handle('bio:enable', async (_e, password) => {
+    if (!vault.isUnlocked()) return { ok: false, error: 'Unlock your vault first.' };
+    if (!(await vault.verifyPassword(String(password || '')))) return { ok: false, error: 'Incorrect master password.' };
+    const st = await biometric.status(null);
+    if (!st.available) return { ok: false, error: `${biometric.name()} isn't set up on this computer.` };
+    if (!(await biometric.prompt(`turn on ${biometric.name()} for Password Vault`))) {
+      return { ok: false, error: `${biometric.name()} didn't confirm it was you. Nothing was changed.` };
+    }
+    biometric.saveKey(vault.keyInfo());
+    return { ok: true };
+  });
+
+  ipcMain.handle('bio:disable', () => {
+    biometric.disable();
+    return { ok: true };
+  });
+
+  ipcMain.handle('bio:unlock', async () => {
+    if (!vault.exists()) return { ok: false, error: 'No vault found.' };
+    const res = await biometric.unlockKey('unlock Password Vault');
+    if (res.error === 'cancelled') return { ok: false, cancelled: true };
+    if (res.error === 'expired') return { ok: false, needsPassword: true, error: `For your security, enter your master password (required every ${biometric.RECHECK_DAYS} days).` };
+    if (res.error) return { ok: false, needsPassword: true, error: 'Enter your master password to continue.' };
+    if (res.filePath !== vault.filePath || !vault.unlockWithKey(res.key)) {
+      res.key.fill(0);
+      return { ok: false, needsPassword: true, error: 'Your master password has changed. Enter it once to keep using ' + biometric.name() + '.' };
+    }
+    res.key.fill(0);
+    failedAttempts = 0;
+    checkForRemoteChanges();
     return { ok: true };
   });
 
@@ -285,6 +328,7 @@ function registerIpc() {
         return { ok: false, error: 'New master password must be at least 8 characters.' };
       }
       const ok = await vault.changeMasterPassword(current, next);
+      if (ok) biometric.refresh(vault.keyInfo()); // keep Touch ID / Hello working with the new password
       return ok ? { ok: true } : { ok: false, error: 'Current master password is incorrect.' };
     })
   );
