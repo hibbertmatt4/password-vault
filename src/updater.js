@@ -46,6 +46,9 @@ let manualCheck = false;
 let notifiedVersion = null;
 let lastCheck = 0;
 let checksEnabled = false;
+let downloadInProgress = false;
+let retryTimer = null;
+const RETRY_LATER_MS = 10 * 60 * 1000; // after a "server busy" failure, try the download again in 10 minutes
 
 function setStatus(patch) {
   status = { ...status, ...patch };
@@ -92,6 +95,9 @@ function init(sendToRenderer) {
   autoUpdater.on('download-progress', (p) => setStatus({ state: 'downloading', percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => setStatus({ state: 'downloaded', version: info.version, percent: 100 }));
   autoUpdater.on('error', (err) => {
+    logLine(`error (${downloadInProgress ? 'download' : manualCheck ? 'check' : 'background check'}): ${err && err.message ? err.message : err}`);
+    // Downloads handle their own errors (with retries) in download().
+    if (downloadInProgress) return;
     // Automatic background checks fail quietly (e.g. no internet); only show errors you asked for.
     if (manualCheck || status.state === 'downloading') {
       setStatus({ state: 'error', error: friendlyError(err) });
@@ -120,11 +126,33 @@ function onStatus(fn) {
   listeners.push(fn);
 }
 
-function friendlyError(err) {
+// GitHub's file server occasionally answers "504 Gateway Time-out" (or 502/503) for a while.
+const isServerBusy = (err) => /\b50[234]\b|gateway|service unavailable|timed? ?out/i.test(String((err && err.message) || err));
+
+function friendlyError(err, { willRetry = false } = {}) {
   const msg = String((err && err.message) || err);
-  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|net::ERR|network/i.test(msg)) return 'Could not reach the update server. Check your internet connection.';
+  if (isServerBusy(err)) {
+    return willRetry
+      ? "GitHub's download server isn't responding right now. Password Vault will try again automatically in a few minutes."
+      : "GitHub's download server isn't responding right now. Please try again in a few minutes.";
+  }
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|net::ERR|network/i.test(msg)) return 'Could not reach the update server. Check your internet connection.';
   if (/404|latest.*\.yml/i.test(msg)) return 'No published updates were found yet.';
+  if (/sha512|checksum/i.test(msg)) return "The downloaded update didn't pass its safety check, so it wasn't installed. Please try again.";
   return 'Something went wrong while updating. Please try again later.';
+}
+
+// A small log on this computer (Password Vault's data folder → logs/updater.log) so update problems can be diagnosed.
+function logLine(text) {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    const file = path.join(dir, 'updater.log');
+    fs.mkdirSync(dir, { recursive: true });
+    if (fs.existsSync(file) && fs.statSync(file).size > 200 * 1024) fs.renameSync(file, file + '.old');
+    fs.appendFileSync(file, `${new Date().toISOString()} v${app.getVersion()} ${text}\n`);
+  } catch {
+    /* logging must never break updating */
+  }
 }
 
 async function check(manual = true) {
@@ -153,11 +181,34 @@ async function download() {
     shell.openExternal(RELEASES_URL);
     return status;
   }
-  setStatus({ state: 'downloading', percent: 0 });
+  if (downloadInProgress || status.state === 'downloaded') return status;
+  clearTimeout(retryTimer);
+  downloadInProgress = true;
+  const waits = [5000, 15000]; // pause before the 2nd and 3rd attempt
+  let lastErr = null;
   try {
-    await autoUpdater.downloadUpdate();
-  } catch {
-    /* handled by the 'error' event */
+    for (let attempt = 1; attempt <= waits.length + 1; attempt++) {
+      setStatus({ state: 'downloading', percent: 0, error: null });
+      try {
+        await autoUpdater.downloadUpdate();
+        logLine(`download ok (attempt ${attempt})`);
+        return status; // 'update-downloaded' has set the state
+      } catch (err) {
+        lastErr = err;
+        logLine(`download attempt ${attempt} failed: ${err && err.message ? err.message : err}`);
+        if (attempt <= waits.length) await new Promise((r) => setTimeout(r, waits[attempt - 1]));
+      }
+    }
+  } finally {
+    downloadInProgress = false;
+  }
+  // All attempts failed. If GitHub's server is just busy, quietly try again later.
+  const busy = isServerBusy(lastErr);
+  setStatus({ state: 'error', error: friendlyError(lastErr, { willRetry: busy }) });
+  if (busy) {
+    retryTimer = setTimeout(() => {
+      if (status.state === 'error') download();
+    }, RETRY_LATER_MS);
   }
   return status;
 }
