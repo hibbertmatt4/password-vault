@@ -1127,7 +1127,7 @@ function openEditor(entry) {
 function setEditorFolder(name) {
   $('e-folder').value = name || '';
   $('folder-trigger-label').textContent = name || 'No folder';
-  $('folder-trigger').classList.toggle('empty', !name);
+  $('folder-trigger').classList.toggle('no-folder', !name); // (not "empty": that class is the welcome screen's)
 }
 
 function closeFolderPicker() {
