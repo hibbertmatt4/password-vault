@@ -11,7 +11,8 @@ const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
 
-const CHECK_EVERY_MS = 4 * 60 * 60 * 1000; // every 4 hours while the app is open
+const CHECK_EVERY_MS = 30 * 60 * 1000; // every 30 minutes while the app is running (window open or in the tray)
+const MIN_GAP_MS = 5 * 60 * 1000; // extra checks (wake from sleep, window opened) at most every 5 minutes
 const IS_MAC = process.platform === 'darwin';
 
 // Where updates come from. The installer removes the "build" section from the app's own
@@ -39,24 +40,30 @@ const RELEASES_URL = `https://github.com/${publish.owner}/${publish.repo}/releas
 const CONFIGURED = Boolean(publish.owner) && !/YOUR-GITHUB-USERNAME/.test(publish.owner);
 
 let send = () => {};
+const listeners = []; // e.g. the tray menu
 let status = { state: 'idle', version: null, percent: 0, error: null };
 let manualCheck = false;
 let notifiedVersion = null;
+let lastCheck = 0;
+let checksEnabled = false;
 
 function setStatus(patch) {
   status = { ...status, ...patch };
-  send({ ...status, currentVersion: app.getVersion(), isMac: IS_MAC });
+  const full = { ...status, currentVersion: app.getVersion(), isMac: IS_MAC };
+  send(full);
+  for (const fn of listeners) fn(full);
 }
 
+let activeNotification = null; // keep a reference so Windows doesn't drop the click handler
 function notify(version) {
   if (notifiedVersion === version || !Notification.isSupported()) return;
   notifiedVersion = version;
-  const n = new Notification({
+  activeNotification = new Notification({
     title: 'Password Vault update available',
-    body: `Version ${version} is ready. Open Password Vault to update.`,
+    body: `Version ${version} is ready to install. Click here to update.`,
   });
-  n.on('click', () => app.emit('show-window'));
-  n.show();
+  activeNotification.on('click', () => app.emit('show-window'));
+  activeNotification.show();
 }
 
 function init(sendToRenderer) {
@@ -71,8 +78,13 @@ function init(sendToRenderer) {
     autoUpdater.setFeedURL({ provider: 'generic', url: process.env.PV_UPDATE_TEST_URL });
   }
 
-  autoUpdater.on('checking-for-update', () => setStatus({ state: 'checking', error: null }));
-  autoUpdater.on('update-not-available', () => setStatus({ state: 'none' }));
+  autoUpdater.on('checking-for-update', () => {
+    // Background re-checks don't flash "Checking…" over an update that's already waiting.
+    if (manualCheck || !['available', 'downloading', 'downloaded'].includes(status.state)) setStatus({ state: 'checking', error: null });
+  });
+  autoUpdater.on('update-not-available', () => {
+    if (!['downloading', 'downloaded'].includes(status.state)) setStatus({ state: 'none' });
+  });
   autoUpdater.on('update-available', (info) => {
     setStatus({ state: 'available', version: info.version });
     notify(info.version);
@@ -83,16 +95,29 @@ function init(sendToRenderer) {
     // Automatic background checks fail quietly (e.g. no internet); only show errors you asked for.
     if (manualCheck || status.state === 'downloading') {
       setStatus({ state: 'error', error: friendlyError(err) });
-    } else {
+    } else if (!['available', 'downloaded'].includes(status.state)) {
       setStatus({ state: 'idle' });
     }
   });
 
   const canCheck = app.isPackaged || process.env.PV_UPDATE_TEST_URL;
   if (canCheck && (CONFIGURED || process.env.PV_UPDATE_TEST_URL)) {
+    checksEnabled = true;
     setTimeout(() => check(false), 5000);
     setInterval(() => check(false), CHECK_EVERY_MS);
   }
+}
+
+/** Check soon after something happens (computer woke up, window opened) — at most every few minutes. */
+function checkSoon(delayMs = 0) {
+  if (!checksEnabled || Date.now() - lastCheck < MIN_GAP_MS) return;
+  setTimeout(() => {
+    if (Date.now() - lastCheck >= MIN_GAP_MS) check(false);
+  }, delayMs);
+}
+
+function onStatus(fn) {
+  listeners.push(fn);
 }
 
 function friendlyError(err) {
@@ -113,6 +138,7 @@ async function check(manual = true) {
     return status;
   }
   if (status.state === 'downloading' || status.state === 'downloaded') return status;
+  lastCheck = Date.now();
   try {
     await autoUpdater.checkForUpdates();
   } catch {
@@ -143,6 +169,8 @@ function install() {
 module.exports = {
   init,
   check,
+  checkSoon,
+  onStatus,
   download,
   install,
   getStatus: () => ({ ...status, currentVersion: app.getVersion(), isMac: IS_MAC }),

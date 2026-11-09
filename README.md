@@ -75,8 +75,15 @@ The Mac app isn't signed by Apple, so macOS blocks it the first time. Go to **Sy
 
 If you do have a Mac: install Node.js, then run `npm install` and `npm run dist:mac` in this folder.
 
+## Running in the background
+- **Closing the window:** Password Vault **locks** and keeps running in the **system tray** (Windows, by the clock) or the **menu bar** (Mac). It keeps checking for updates and can notify you.
+- **Opening it again:** click the tray icon (Windows) or choose **Open Password Vault** from its menu.
+- **Quitting:** choose **Quit Password Vault** from the same menu.
+- **Starting at sign-in:** by default it also starts quietly in the tray when you sign in to your computer, so update notifications arrive even if you don't open it.
+- **Turning these off:** **Settings → Background & startup**.
+
 ## Updates
-The app checks for new versions when it starts, and then every 4 hours. When one is found:
+The app checks for new versions when it starts, every 30 minutes, when your computer wakes up, and when you open the window. When one is found:
 - you get a system notification and a banner in the app, and a dot appears on **Settings**;
 - **Windows:** click **Update now**, then **Restart & update** (or it installs next time you quit);
 - **Mac:** click **Download** to get the new version, then drag it into Applications. Unsigned Mac apps can't replace themselves.

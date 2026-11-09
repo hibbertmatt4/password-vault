@@ -115,9 +115,15 @@ async function updateBioButton(mayAutoPrompt) {
   }
   $('bio-btn-label').textContent = `Unlock with ${bio.name}`;
   show($('bio-btn'));
-  // When the app first opens, ask straight away so you can just touch the sensor.
-  if (mayAutoPrompt) bioUnlock();
+  // When the app first opens, ask straight away so you can just touch the sensor —
+  // but not while it's starting up hidden in the tray (it asks when you open the window instead).
+  if (mayAutoPrompt && (await window.api.isWindowVisible())) bioUnlock();
 }
+
+// Opened from the tray, a notification or the Dock: offer Touch ID / Windows Hello right away.
+window.api.onShown(() => {
+  if (!$('lock-screen').classList.contains('hidden') && !creating && !bioBusy) updateBioButton(true);
+});
 
 let bioBusy = false;
 async function bioUnlock() {
@@ -454,6 +460,32 @@ $('sync-bio').addEventListener('click', async () => {
   } finally {
     btn.disabled = false;
   }
+});
+
+// ---------- Background & startup (Settings) ----------
+async function renderBackground(p) {
+  p = p || (await window.api.getPrefs());
+  const mac = p.platform === 'darwin';
+  $('bg-keep-title').textContent = mac ? 'Keep running in the menu bar' : 'Keep running in the system tray';
+  $('bg-keep-text').textContent = `When you close the window, Password Vault locks and stays in the ${mac ? 'menu bar' : 'tray'}, so it can keep checking for updates and notify you.`;
+  $('bg-login-text').textContent = p.installed
+    ? `Starts quietly in the ${mac ? 'menu bar' : 'tray'}, so you get update notifications even if you don't open it.`
+    : 'Only available in the installed app.';
+  $('bg-keep').checked = p.keepRunning;
+  $('bg-login').checked = p.keepRunning && p.openAtLogin;
+  // Starting at sign-in only makes sense while it can stay running in the background.
+  $('bg-login').disabled = !p.keepRunning || !p.installed;
+  $('bg-login').closest('.switch-row').classList.toggle('disabled', $('bg-login').disabled);
+}
+$('bg-keep').addEventListener('change', async () => {
+  const p = await window.api.setPref('keepRunning', $('bg-keep').checked);
+  renderBackground(p);
+  toast(p.keepRunning ? 'Password Vault will keep running when you close the window' : 'Closing the window will quit Password Vault');
+});
+$('bg-login').addEventListener('change', async () => {
+  const p = await window.api.setPref('openAtLogin', $('bg-login').checked);
+  renderBackground(p);
+  toast(p.openAtLogin ? 'Password Vault will open when you sign in' : "Password Vault won't open when you sign in");
 });
 
 // ---------- sync section in Settings ----------
@@ -1380,6 +1412,7 @@ $('settings-btn').addEventListener('click', () => {
   $('settings-msg').textContent = '';
   renderSync();
   renderBio();
+  renderBackground();
   showPane('settings-pane');
   $('s-current').focus();
 });

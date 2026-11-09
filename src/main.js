@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, clipboard, shell, powerMonitor, Menu, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, clipboard, shell, powerMonitor, Menu, dialog, Tray, nativeImage, Notification } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { Vault, generatePassword } = require('./vault');
@@ -85,8 +85,111 @@ function guarded(fn) {
   };
 }
 
+// ---------- running in the background (tray / menu bar) & starting at sign-in ----------
+let tray = null;
+let windowCreatedBefore = false;
+let quitting = false; // true once the user really quits (tray "Quit", Cmd+Q, installing an update)
+// Started by "open at sign-in": stay hidden in the tray until the user opens it.
+const startedHidden =
+  process.argv.includes('--hidden') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin);
+
+const prefs = () => ({
+  keepRunning: settings.get('keepRunning') !== false, // on unless turned off
+  openAtLogin: settings.get('openAtLogin') !== false,
+});
+
+function showWindow() {
+  if (!win || win.isDestroyed()) createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function trayImage() {
+  const file = process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png';
+  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', file));
+  if (process.platform === 'darwin') img.setTemplateImage(true);
+  return img;
+}
+
+function rebuildTrayMenu() {
+  if (!tray) return;
+  const up = updater.getStatus();
+  const updateItem =
+    up.state === 'downloaded'
+      ? { label: `Restart to update to ${up.version}`, click: () => updater.install() }
+      : up.state === 'available'
+        ? { label: `Update available (${up.version})…`, click: () => showWindow() }
+        : {
+            label: 'Check for updates',
+            click: () => {
+              showWindow();
+              updater.check(true);
+            },
+          };
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open Password Vault', click: showWindow },
+      { label: 'Lock now', enabled: !!(vault && vault.isUnlocked()), click: () => lockVault('manual') },
+      { type: 'separator' },
+      updateItem,
+      { type: 'separator' },
+      {
+        label: 'Quit Password Vault',
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
+    ])
+  );
+  tray.setToolTip(up.state === 'available' || up.state === 'downloaded' ? `Password Vault — update ${up.version} available` : 'Password Vault');
+}
+
+function applyBackgroundPrefs() {
+  const p = prefs();
+  if (p.keepRunning && !tray) {
+    tray = new Tray(trayImage());
+    // Windows: click the tray icon to open the app (right-click for the menu).
+    // Mac: clicking the menu bar icon shows the menu, as Mac users expect.
+    if (process.platform !== 'darwin') {
+      tray.on('click', showWindow);
+      tray.on('double-click', showWindow);
+    }
+    rebuildTrayMenu();
+  } else if (!p.keepRunning && tray) {
+    tray.destroy();
+    tray = null;
+  }
+  // Only the installed app registers itself to start at sign-in (never a development copy).
+  if (app.isPackaged) {
+    app.setLoginItemSettings({
+      openAtLogin: p.openAtLogin && p.keepRunning,
+      openAsHidden: true, // older macOS
+      args: ['--hidden'], // Windows: start hidden in the tray
+    });
+  }
+}
+
+// The first time the window is closed into the tray, explain where the app went.
+let hintNotification = null;
+function firstHideHint() {
+  if (settings.get('trayHintShown') || !Notification.isSupported()) return;
+  settings.set('trayHintShown', true);
+  hintNotification = new Notification({
+    title: 'Password Vault is still running',
+    body:
+      process.platform === 'darwin'
+        ? 'Your vault is locked. Find Password Vault in the menu bar at the top of the screen to open it or quit — it keeps checking for updates.'
+        : 'Your vault is locked. Find Password Vault in the system tray (by the clock) to open it or quit — it keeps checking for updates.',
+  });
+  hintNotification.on('click', showWindow);
+  hintNotification.show();
+}
+
 function createWindow() {
   win = new BrowserWindow({
+    show: !(startedHidden && !windowCreatedBefore), // the first window stays hidden when started at sign-in
     width: 1000,
     height: 680,
     minWidth: 760,
@@ -111,10 +214,26 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  windowCreatedBefore = true;
 
   // Never navigate away or open new windows inside the app.
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  // Closing the window keeps Password Vault running in the tray / menu bar (vault locked),
+  // so it can keep checking for updates and send notifications.
+  win.on('close', (e) => {
+    if (quitting || !prefs().keepRunning) return;
+    e.preventDefault();
+    win.hide();
+    lockVault('closed');
+    firstHideHint();
+  });
+  win.on('show', () => {
+    win.webContents.send('window:shown');
+    updater.checkSoon(2000);
+  });
+  win.on('focus', () => updater.checkSoon(2000));
 }
 
 function lockVault(reason) {
@@ -122,6 +241,7 @@ function lockVault(reason) {
     vault.lock();
     if (win && !win.isDestroyed()) win.webContents.send('vault:locked', reason);
   }
+  rebuildTrayMenu();
 }
 
 function buildMenu() {
@@ -283,6 +403,7 @@ function registerIpc() {
     failedAttempts = 0;
     checkForRemoteChanges(); // catch anything the other computer saved while we were unlocking
     biometric.refresh(vault.keyInfo()); // master password used: restart the Touch ID / Hello 7-day clock
+    rebuildTrayMenu();
     return { ok: true };
   });
 
@@ -342,6 +463,7 @@ function registerIpc() {
     res.key.fill(0);
     failedAttempts = 0;
     checkForRemoteChanges();
+    rebuildTrayMenu();
     return { ok: true };
   });
 
@@ -384,9 +506,23 @@ function registerIpc() {
       case 'quit': return app.quit();
     }
   });
+  // The page can't reliably tell whether its window is hidden (e.g. started in the tray), so ask here.
+  ipcMain.handle('window:isVisible', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    return !!(w && w.isVisible() && !w.isMinimized());
+  });
   ipcMain.handle('window:isMaximized', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender);
     return w ? w.isMaximized() : false;
+  });
+
+  // Settings: keep running in the tray / open at sign-in.
+  ipcMain.handle('prefs:get', () => ({ ...prefs(), platform: process.platform, installed: app.isPackaged }));
+  ipcMain.handle('prefs:set', (_e, key, value) => {
+    if (!['keepRunning', 'openAtLogin'].includes(key)) return prefs();
+    settings.set(key, !!value);
+    applyBackgroundPrefs();
+    return { ...prefs(), platform: process.platform, installed: app.isPackaged };
   });
 
   ipcMain.handle('update:status', () => updater.getStatus());
@@ -420,12 +556,8 @@ function registerIpc() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
-    }
-  });
+  // Opening Password Vault again (e.g. from the Start menu) shows the running copy.
+  app.on('second-instance', () => showWindow());
 
   // Lets Windows show notifications under the app's own name.
   if (process.platform === 'win32') app.setAppUserModelId('com.matt.passwordvault');
@@ -442,13 +574,11 @@ if (!app.requestSingleInstanceLock()) {
     updater.init((status) => {
       if (win && !win.isDestroyed()) win.webContents.send('update:status', status);
     });
-    // Clicking the "update available" notification brings the app to the front.
-    app.on('show-window', () => {
-      if (!win || win.isDestroyed()) return createWindow();
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-    });
+    updater.onStatus(() => rebuildTrayMenu());
+    applyBackgroundPrefs();
+    if (startedHidden && !tray) showWindow(); // never end up running with no window and no tray icon
+    // Clicking a notification (e.g. "update available") brings the app to the front.
+    app.on('show-window', showWindow);
 
     // Auto-lock: on inactivity, when the computer locks, or when it goes to sleep.
     setInterval(() => {
@@ -457,10 +587,11 @@ if (!app.requestSingleInstanceLock()) {
     }, 15000);
     powerMonitor.on('lock-screen', () => lockVault('system'));
     powerMonitor.on('suspend', () => lockVault('system'));
+    // Look for updates soon after the computer wakes up or is unlocked (timers pause during sleep).
+    powerMonitor.on('resume', () => updater.checkSoon(15000));
+    powerMonitor.on('unlock-screen', () => updater.checkSoon(5000));
 
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    });
+    app.on('activate', showWindow); // Mac: clicking the Dock icon
   });
 
   app.on('window-all-closed', () => {
@@ -469,6 +600,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('before-quit', () => {
+    quitting = true; // let the window really close (also when an update installs)
     if (watchedPath) fs.unwatchFile(watchedPath);
     lockVault('closed');
     clearTimeout(clipboardTimer);

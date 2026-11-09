@@ -232,6 +232,24 @@
           </div>
         </div>
 
+        <div id="bg-card" class="card update-card">
+          <div class="card-title">Background &amp; startup</div>
+          <label class="switch-row">
+            <span>
+              <span class="update-version" id="bg-keep-title">Keep running in the system tray</span>
+              <span class="update-text" id="bg-keep-text">When you close the window, Password Vault locks and stays in the tray, so it can check for updates and notify you.</span>
+            </span>
+            <input type="checkbox" id="bg-keep" class="switch" />
+          </label>
+          <label class="switch-row">
+            <span>
+              <span class="update-version">Open when I sign in to my computer</span>
+              <span class="update-text" id="bg-login-text">Starts quietly in the tray, so you get update notifications even if you don't open it.</span>
+            </span>
+            <input type="checkbox" id="bg-login" class="switch" />
+          </label>
+        </div>
+
         <div id="bio-card" class="card update-card hidden">
           <div id="bio-card-title" class="card-title">Unlock with Touch ID</div>
           <div class="update-row">

@@ -617,6 +617,29 @@ button.select-trigger.open .select-arrow { transform: rotate(180deg); }
 
 button.primary.danger-fill { background: var(--negative); border-color: var(--negative); color: #fff; }
 button.primary.danger-fill:hover { background: #a93226; border-color: #a93226; }
+/* on/off switches (Settings → Background & startup) */
+.switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 10px 0; cursor: pointer;
+}
+.switch-row + .switch-row { border-top: 1px solid rgba(49, 61, 42, 0.06); }
+.switch-row > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.switch-row.disabled { opacity: 0.5; cursor: default; }
+input.switch {
+  appearance: none; -webkit-appearance: none; flex: none;
+  width: 42px; height: 24px; padding: 0; margin: 0; border-radius: var(--radius-pill);
+  background: rgba(49, 61, 42, 0.18); border: none; position: relative; cursor: pointer;
+  transition: background 0.18s;
+}
+input.switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.18s;
+}
+input.switch:checked { background: var(--green); }
+input.switch:checked::after { transform: translateX(18px); background: var(--cream); }
+input.switch:focus-visible { outline: 2px solid var(--tan); outline-offset: 2px; }
+input.switch:disabled { cursor: default; }
+
 /* small pop-up for naming / deleting folders */
 .ask-modal { width: min(420px, 100%); }
 .ask-modal input { margin-top: 2px; }
