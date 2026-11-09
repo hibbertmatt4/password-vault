@@ -114,6 +114,23 @@ function sortData(d) {
 
 const cleanFolderName = (name) => String(name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
 
+// Which kind of computer made an edit, so the other computer can say "updated on your Mac".
+const THIS_DEVICE = process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows PC' : 'computer';
+
+// What changed between two copies of the vault, login by login: [{ kind: added|updated|deleted, id, title, changedOn }].
+function diffEntries(before, after) {
+  const old = new Map(normalize(before).entries.map((e) => [e.id, e]));
+  const now = new Map(normalize(after).entries.map((e) => [e.id, e]));
+  const out = [];
+  for (const [id, e] of now) {
+    const prev = old.get(id);
+    if (!prev) out.push({ kind: 'added', id, title: e.title, changedOn: e.changedOn || null });
+    else if ((e.updatedAt || '') !== (prev.updatedAt || '')) out.push({ kind: 'updated', id, title: e.title, changedOn: e.changedOn || null });
+  }
+  for (const [id, e] of old) if (!now.has(id)) out.push({ kind: 'deleted', id, title: e.title, changedOn: null });
+  return out;
+}
+
 class Vault {
   /**
    * @param {string} filePath where the encrypted vault lives (may be inside a cloud-synced folder)
@@ -127,7 +144,33 @@ class Vault {
     this.kdf = null;
     this.data = null; // { entries, deleted }
     this.lastHash = null; // hash of the file as we last read or wrote it
+    this.seenHash = null; // the file as it was when we locked (to notice other computers' edits while locked)
     this.lastSync = null;
+    this.remoteChanges = new Map(); // logins changed by another computer, not yet reported (id → change)
+  }
+
+  /** Changes other computers made since the last call (and forget them). */
+  takeRemoteChanges() {
+    const list = [...this.remoteChanges.values()];
+    this.remoteChanges.clear();
+    return list;
+  }
+
+  _noteRemote(before, after) {
+    for (const c of diffEntries(before, after)) {
+      const prev = this.remoteChanges.get(c.id);
+      // "added" then "updated" before we reported it is still just "added".
+      this.remoteChanges.set(c.id, prev && prev.kind === 'added' && c.kind === 'updated' ? { ...c, kind: 'added' } : c);
+    }
+  }
+
+  /** Hash of the vault file on disk right now (works while locked), or null. */
+  fileHash() {
+    try {
+      return sha256(fs.readFileSync(this.filePath, 'utf8'));
+    } catch {
+      return null;
+    }
   }
 
   exists() {
@@ -203,10 +246,12 @@ class Vault {
   }
 
   lock() {
+    if (this.lastHash) this.seenHash = this.lastHash;
     if (this.key) this.key.fill(0);
     this.key = null;
     this.data = null;
     this.lastHash = null;
+    this.remoteChanges.clear();
   }
 
   async verifyPassword(password) {
@@ -254,9 +299,9 @@ class Vault {
     if (entry.id) {
       const existing = this.data.entries.find((e) => e.id === entry.id);
       if (!existing) throw new Error('Entry not found.');
-      saved = { ...existing, ...clean, updatedAt: now };
+      saved = { ...existing, ...clean, updatedAt: now, changedOn: THIS_DEVICE };
     } else {
-      saved = { id: crypto.randomUUID(), ...clean, createdAt: now, updatedAt: now };
+      saved = { id: crypto.randomUUID(), ...clean, createdAt: now, updatedAt: now, changedOn: THIS_DEVICE };
     }
     this.data.entries = [...this.data.entries.filter((e) => e.id !== saved.id), saved];
     if (saved.folder) this._ensureFolder(saved.folder, now);
@@ -302,7 +347,7 @@ class Vault {
     const to = cleanFolderName(newName);
     if (!to) throw new Error('Give the folder a name.');
     const now = new Date().toISOString();
-    this.data.entries = this.data.entries.map((e) => (e.folder === oldName ? { ...e, folder: to, updatedAt: now } : e));
+    this.data.entries = this.data.entries.map((e) => (e.folder === oldName ? { ...e, folder: to, updatedAt: now, changedOn: THIS_DEVICE } : e));
     delete this.data.folders[oldName];
     this.data.folderDeleted[oldName] = now;
     this._ensureFolder(to, now);
@@ -314,7 +359,7 @@ class Vault {
   deleteFolder(name) {
     this._requireUnlocked();
     const now = new Date().toISOString();
-    this.data.entries = this.data.entries.map((e) => (e.folder === name ? { ...e, folder: '', updatedAt: now } : e));
+    this.data.entries = this.data.entries.map((e) => (e.folder === name ? { ...e, folder: '', updatedAt: now, changedOn: THIS_DEVICE } : e));
     delete this.data.folders[name];
     this.data.folderDeleted[name] = now;
     this._save();
@@ -360,6 +405,7 @@ class Vault {
     }
     const merged = merge(this.data, remote);
     const changed = !sameData(merged, this.data);
+    if (changed) this._noteRemote(this.data, merged);
     this.data = merged;
     this.lastHash = read.hash;
     this.lastSync = new Date();
@@ -393,7 +439,10 @@ class Vault {
         const other = this._decryptOther(file);
         if (!other) continue; // made with a different master password: leave it alone
         const merged = merge(this.data, other);
-        if (!sameData(merged, this.data)) changed = true;
+        if (!sameData(merged, this.data)) {
+          changed = true;
+          this._noteRemote(this.data, merged);
+        }
         this.data = merged;
         fs.mkdirSync(this.backupDir, { recursive: true });
         fs.renameSync(full, path.join(this.backupDir, `conflict-${Date.now()}-${name}`));
@@ -507,4 +556,4 @@ function generatePassword({ length = 20, upper = true, lower = true, digits = tr
   return chars.join('');
 }
 
-module.exports = { Vault, generatePassword, merge };
+module.exports = { Vault, generatePassword, merge, diffEntries };

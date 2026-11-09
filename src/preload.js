@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('api', {
   getPrefs: () => ipcRenderer.invoke('prefs:get'),
   setPref: (key, value) => ipcRenderer.invoke('prefs:set', key, value),
   onShown: (cb) => ipcRenderer.on('window:shown', () => cb()),
+  onFullScreen: (cb) => ipcRenderer.on('window:fullscreen', (_e, on) => cb(on)),
+  onRemoteChanges: (cb) => ipcRenderer.on('sync:remoteChanges', (_e, msg) => cb(msg)),
   isWindowVisible: () => ipcRenderer.invoke('window:isVisible'),
   updateStatus: () => ipcRenderer.invoke('update:status'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

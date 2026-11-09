@@ -39,12 +39,74 @@ function watchVault() {
 }
 
 function checkForRemoteChanges() {
-  if (!vault || !vault.isUnlocked()) return;
+  if (!vault) return;
+  if (!vault.isUnlocked()) return checkWhileLocked();
+  lockedNoticeSent = false;
   const res = vault.syncFromDisk();
   if (res.needsUnlock) return send('vault:locked', 'password-changed');
   const merged = vault.mergeConflictCopies();
   if (res.changed || merged) send('vault:changed');
+  reportRemoteChanges();
   send('sync:status', syncStatus());
+}
+
+// ---------- telling you when another computer adds, changes or deletes a password ----------
+const THIS_DEVICE = process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows PC' : 'computer';
+let changeNotification = null; // keep a reference so Windows doesn't drop the click handler
+let lockedNoticeSent = false; // only one "something changed" notice per locked spell
+
+const placeOf = (device) => (!device ? 'on another computer' : device === THIS_DEVICE ? `on your other ${device}` : `on your ${device}`);
+
+function listNames(names) {
+  const shown = names.slice(0, 3).join(', ');
+  return names.length > 3 ? `${shown} and ${names.length - 3} more` : shown;
+}
+
+// e.g. { title: 'Password updated on your Mac', body: 'GitHub', short: 'GitHub was updated on your Mac' }
+function describeRemoteChanges(list) {
+  const devices = new Set(list.map((c) => c.changedOn).filter(Boolean));
+  const place = placeOf(devices.size === 1 ? [...devices][0] : null);
+  if (list.length === 1) {
+    const c = list[0];
+    return { title: `Password ${c.kind} ${place}`, body: c.title, short: `${c.title} was ${c.kind} ${place}` };
+  }
+  const parts = [];
+  for (const [kind, label] of [['added', 'Added'], ['updated', 'Updated'], ['deleted', 'Deleted']]) {
+    const names = list.filter((c) => c.kind === kind).map((c) => c.title);
+    if (names.length) parts.push(`${label}: ${listNames(names)}.`);
+  }
+  return { title: `${list.length} passwords changed ${place}`, body: parts.join(' '), short: `${list.length} passwords changed ${place}` };
+}
+
+function notify(title, body) {
+  if (!Notification.isSupported()) return;
+  changeNotification = new Notification({ title, body });
+  changeNotification.on('click', showWindow);
+  changeNotification.show();
+}
+
+function reportRemoteChanges() {
+  const list = vault.takeRemoteChanges();
+  if (!list.length || !prefs().notifyChanges) return;
+  const msg = describeRemoteChanges(list);
+  // Looking at the app already: a message inside it is enough. Otherwise a system notification.
+  if (win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()) return send('sync:remoteChanges', msg.short);
+  notify(msg.title, msg.body);
+}
+
+// While locked the vault can't be read, but we can still see that the synced file changed.
+function checkWhileLocked() {
+  if (!prefs().notifyChanges || lockedNoticeSent || samePath(vault.filePath, localPath)) return; // only synced vaults
+  const now = vault.fileHash();
+  if (!now) return;
+  if (!vault.seenHash) {
+    vault.seenHash = now; // first look since the app started
+    return;
+  }
+  if (now === vault.seenHash) return;
+  vault.seenHash = now;
+  lockedNoticeSent = true;
+  notify('Your passwords were changed on another computer', 'Open Password Vault and unlock it to see what’s new.');
 }
 
 // Where the vault is, e.g. "OneDrive". Falls back to the name saved when sync was set up,
@@ -96,6 +158,7 @@ const startedHidden =
 const prefs = () => ({
   keepRunning: settings.get('keepRunning') !== false, // on unless turned off
   openAtLogin: settings.get('openAtLogin') !== false,
+  notifyChanges: settings.get('notifyChanges') !== false,
 });
 
 function showWindow() {
@@ -234,6 +297,11 @@ function createWindow() {
     updater.checkSoon(2000);
   });
   win.on('focus', () => updater.checkSoon(2000));
+  // Mac hides the traffic lights in full screen, so the title bar can use that space.
+  const sendFullScreen = () => send('window:fullscreen', win.isFullScreen());
+  win.on('enter-full-screen', sendFullScreen);
+  win.on('leave-full-screen', sendFullScreen);
+  win.webContents.on('did-finish-load', sendFullScreen);
 }
 
 function lockVault(reason) {
@@ -519,7 +587,7 @@ function registerIpc() {
   // Settings: keep running in the tray / open at sign-in.
   ipcMain.handle('prefs:get', () => ({ ...prefs(), platform: process.platform, installed: app.isPackaged }));
   ipcMain.handle('prefs:set', (_e, key, value) => {
-    if (!['keepRunning', 'openAtLogin'].includes(key)) return prefs();
+    if (!['keepRunning', 'openAtLogin', 'notifyChanges'].includes(key)) return prefs();
     settings.set(key, !!value);
     applyBackgroundPrefs();
     return { ...prefs(), platform: process.platform, installed: app.isPackaged };

@@ -337,6 +337,7 @@ button.later:hover { background: rgba(244, 224, 202, 0.08); color: var(--cream);
   position: relative; z-index: 9500;
 }
 body.mac .titlebar { padding-left: 84px; padding-right: 12px; } /* room for the Mac traffic lights */
+body.mac.fullscreen .titlebar { padding-left: 12px; } /* full screen hides the traffic lights */
 .titlebar-brand { display: flex; align-items: center; gap: 8px; }
 .titlebar-brand img { width: 20px; height: 20px; border-radius: var(--logo-radius); }
 .titlebar-brand span {
@@ -345,7 +346,6 @@ body.mac .titlebar { padding-left: 84px; padding-right: 12px; } /* room for the 
 }
 .titlebar-brand em { font-style: normal; color: var(--tan); }
 .menubar { display: flex; gap: 2px; -webkit-app-region: no-drag; }
-body.mac .menubar { display: none; } /* Mac uses the menu bar at the top of the screen */
 .menu-root { position: relative; }
 button.menu-top {
   height: 28px; padding: 0 11px; font-size: 12.5px;

@@ -113,6 +113,35 @@ const tick = () => new Promise((r) => setTimeout(r, 5)); // make timestamps diff
     const old = merge({ entries: [{ id: '1', title: 'x', updatedAt: '2026-01-01' }], deleted: {} }, { entries: [], deleted: { 1: '2026-02-01' } });
     assert.strictEqual(old.entries.length, 0);
 
+    // Notifications: the other computer's adds / edits / deletions are reported, your own are not.
+    const A4 = new Vault(cloud, path.join(dir, 'backupsA4'));
+    const B4 = new Vault(cloud, path.join(dir, 'backupsB4'));
+    await A4.unlock('third pw 123');
+    await B4.unlock('third pw 123');
+    A4.takeRemoteChanges();
+    B4.takeRemoteChanges();
+    const own = A4.upsert({ title: 'Bank' });
+    assert.deepStrictEqual(A4.takeRemoteChanges(), [], 'own edits are not "remote"');
+    assert(own.changedOn, 'edits say which kind of computer made them');
+    B4.syncFromDisk();
+    let got = B4.takeRemoteChanges();
+    assert.deepStrictEqual(got.map((c) => [c.kind, c.title]), [['added', 'Bank']]);
+    assert.strictEqual(got[0].changedOn, own.changedOn);
+    await tick();
+    A4.upsert({ ...own, password: 'new' });
+    A4.remove(A4.list().find((e) => e.title === 'Spotify').id);
+    B4.syncFromDisk();
+    got = B4.takeRemoteChanges().map((c) => `${c.kind}:${c.title}`).sort();
+    assert.deepStrictEqual(got, ['deleted:Spotify', 'updated:Bank']);
+    assert.deepStrictEqual(B4.takeRemoteChanges(), [], 'reported once');
+    // While locked: the file hash still shows that something changed.
+    B4.lock();
+    const seen = B4.seenHash;
+    assert(seen && seen === B4.fileHash());
+    A4.upsert({ title: 'While locked' });
+    assert.notStrictEqual(B4.fileHash(), seen);
+    A4.lock();
+
     // Nothing readable in the cloud file.
     const raw = fs.readFileSync(cloud, 'utf8');
     assert(!raw.includes('Gmail') && !raw.includes('Spotify'));

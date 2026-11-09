@@ -510,7 +510,20 @@ async function renderSync(status) {
   $('sync-setup').textContent = s.synced ? 'Change folder' : 'Set up sync';
   $('sync-stop').classList.toggle('hidden', !s.synced);
   $('sync-how').classList.toggle('hidden', !s.synced);
+  $('sync-notify-row').classList.toggle('hidden', !s.synced);
+  if (s.synced) $('sync-notify').checked = (await window.api.getPrefs()).notifyChanges;
 }
+
+$('sync-notify').addEventListener('change', async () => {
+  const p = await window.api.setPref('notifyChanges', $('sync-notify').checked);
+  $('sync-notify').checked = p.notifyChanges;
+  toast(p.notifyChanges ? "You'll be told when your other computers make changes" : "You won't be told about changes from other computers");
+});
+
+// Another computer added, changed or deleted a password while you're looking at the app.
+window.api.onRemoteChanges((msg) => {
+  if (!$('app-screen').classList.contains('hidden')) toast(msg);
+});
 
 $('sync-setup').addEventListener('click', () => openSyncModal('enable'));
 $('sync-open-folder').addEventListener('click', () => window.api.syncShowFolder());
@@ -1559,7 +1572,15 @@ window.api.onUpdateStatus(setUpdate);
 window.api.updateStatus().then(setUpdate);
 
 // ---------- title bar menus (Vault / Edit / Window) ----------
-if (window.api.platform === 'darwin') document.body.classList.add('mac');
+if (window.api.platform === 'darwin') {
+  document.body.classList.add('mac');
+  // Mac shortcuts use ⌘ (and redo is ⇧⌘Z).
+  document.querySelectorAll('.menu-item kbd').forEach((k) => {
+    k.textContent = k.textContent === 'Ctrl+Y' ? '⇧⌘Z' : k.textContent.replace('Ctrl+', '⌘');
+  });
+}
+// In full screen the Mac traffic lights disappear, so the logo moves to the edge.
+window.api.onFullScreen((on) => document.body.classList.toggle('fullscreen', on));
 let openMenu = null;
 
 function closeMenus() {

@@ -10,6 +10,7 @@ An offline, encrypted password manager for Windows and Mac.
 - Copied passwords are **wiped from the clipboard after 30 seconds**.
 - **Auto-locks** after 5 minutes of inactivity, or when your computer locks or sleeps. You can also lock it yourself with Ctrl+L / Cmd+L.
 - Repeated wrong master passwords get progressively slower.
+- The same green title bar on both systems: the logo, then the **Vault / Edit / Window** menus (on a Mac they sit beside the window buttons, and the usual menu bar at the top of the screen still works too).
 
 > ⚠️ If you forget your master password, your data **cannot be recovered**.
 
@@ -59,6 +60,7 @@ Your passwords can be shared between your Mac and Windows computers through a cl
 **How it behaves**
 - **Speed:** changes show up on your other computers within a few seconds of the cloud drive syncing them, even while the app is open.
 - **Simultaneous edits:** if you edit on two computers before they sync, both sets of changes are kept. For the same login, the newest edit wins. Deleted logins stay deleted.
+- **Notifications:** when a password is added, changed or deleted on another computer, you get a notification naming it, e.g. *"Password updated on your Mac — GitHub"*. If you're looking at the app, a short message appears inside it instead. While the vault is locked or the window is closed, the app can't read your passwords, so you get one general notice, *"Your passwords were changed on another computer"*. Turn this off in **Settings → Sync between your computers**.
 - **Master password changes:** your other computers lock and ask for the new password.
 - **Privacy:** the cloud company only ever sees the encrypted file.
 - **Stopping:** **Settings → Stop syncing** keeps a copy on that computer only.
