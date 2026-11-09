@@ -8,11 +8,33 @@
 
 const { app, Notification, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
-const pkg = require('../package.json');
+const fs = require('fs');
+const path = require('path');
 
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000; // every 4 hours while the app is open
 const IS_MAC = process.platform === 'darwin';
-const publish = (pkg.build && pkg.build.publish) || {};
+
+// Where updates come from. The installer removes the "build" section from the app's own
+// package.json, so the installed app reads app-update.yml (written next to it by the installer
+// build) instead; while developing, it reads package.json.
+function readPublishConfig() {
+  if (app.isPackaged) {
+    try {
+      const yml = fs.readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8');
+      const get = (key) => (yml.match(new RegExp(`^${key}:\\s*(.+)$`, 'm')) || [])[1];
+      return { owner: get('owner') && get('owner').trim(), repo: get('repo') && get('repo').trim() };
+    } catch {
+      return {};
+    }
+  }
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    return (pkg.build && pkg.build.publish) || {};
+  } catch {
+    return {};
+  }
+}
+const publish = readPublishConfig();
 const RELEASES_URL = `https://github.com/${publish.owner}/${publish.repo}/releases/latest`;
 const CONFIGURED = Boolean(publish.owner) && !/YOUR-GITHUB-USERNAME/.test(publish.owner);
 
