@@ -525,8 +525,142 @@ async function openApp() {
 function sortedFiltered() {
   const q = $('search').value.trim().toLowerCase();
   return entries
-    .filter((e) => !q || e.title.toLowerCase().includes(q) || e.username.toLowerCase().includes(q) || e.url.toLowerCase().includes(q))
+    .filter((e) => !q || [e.title, e.username, e.url, e.folder || ''].some((v) => v.toLowerCase().includes(q)))
     .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+}
+
+// ---------- login icons ----------
+const BRANDS = window.BRAND_ICONS || [];
+const brandById = new Map(BRANDS.map((b) => [b.id, b]));
+const squash = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const brandByName = new Map(BRANDS.map((b) => [squash(b.title), b]));
+
+// Without a chosen icon, show a known logo when the name or website matches one (e.g. "GitHub", "netflix.com").
+function autoBrand(entry) {
+  const byTitle = brandByName.get(squash(entry.title)) || brandById.get(squash(entry.title));
+  if (byTitle) return byTitle;
+  let host = '';
+  try {
+    host = new URL(/^https?:\/\//i.test(entry.url) ? entry.url : 'https://' + entry.url).hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+  const name = host.split('.').slice(-2, -1)[0];
+  return name ? brandById.get(name) || brandByName.get(name) || null : null;
+}
+
+// Light brand colours (e.g. Snapchat yellow) get a dark logo; dark ones get a white logo.
+function contrastOn(hex) {
+  const n = parseInt(hex, 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? '#1a2213' : '#ffffff';
+}
+
+function brandTile(brand) {
+  const div = document.createElement('div');
+  div.className = 'avatar brand-logo';
+  div.style.background = '#' + brand.hex;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', brand.path);
+  p.setAttribute('fill', contrastOn(brand.hex));
+  svg.appendChild(p);
+  div.appendChild(svg);
+  div.title = brand.title;
+  return div;
+}
+
+/** The little picture for a login: chosen logo / emoji / image, else a matching logo, else the first letter. */
+function avatarFor(entry, icon = entry.icon) {
+  if (icon && icon.type === 'brand' && brandById.has(icon.id)) return brandTile(brandById.get(icon.id));
+  if (icon && icon.type === 'emoji') {
+    const div = document.createElement('div');
+    div.className = 'avatar emoji';
+    div.textContent = icon.value;
+    return div;
+  }
+  if (icon && icon.type === 'image') {
+    const div = document.createElement('div');
+    div.className = 'avatar image';
+    const img = document.createElement('img');
+    img.src = icon.data;
+    img.alt = '';
+    div.appendChild(img);
+    return div;
+  }
+  if (!icon || icon.type !== 'letter') {
+    const auto = autoBrand(entry);
+    if (auto) return brandTile(auto);
+  }
+  const div = document.createElement('div');
+  div.className = 'avatar';
+  div.textContent = ((entry.title || '').trim()[0] || '?').toUpperCase();
+  return div;
+}
+
+// ---------- sidebar: logins, grouped into folders ----------
+let collapsedFolders = new Set();
+try {
+  collapsedFolders = new Set(JSON.parse(localStorage.getItem('pv-collapsed-folders') || '[]'));
+} catch {
+  /* storage unavailable */
+}
+function saveCollapsed() {
+  try {
+    localStorage.setItem('pv-collapsed-folders', JSON.stringify([...collapsedFolders]));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function entryRow(entry, inFolder) {
+  const li = document.createElement('li');
+  if (entry.id === selectedId) li.classList.add('active');
+  if (inFolder) li.classList.add('in-folder');
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const t = document.createElement('div');
+  t.className = 't';
+  t.textContent = entry.title;
+  const u = document.createElement('div');
+  u.className = 'u';
+  u.textContent = entry.username || entry.url || '';
+  meta.append(t, u);
+  li.append(avatarFor(entry), meta);
+  li.addEventListener('click', () => selectEntry(entry.id));
+  return li;
+}
+
+function folderHeader(name, count, collapsed) {
+  const li = document.createElement('li');
+  li.className = 'folder-head' + (collapsed ? ' collapsed' : '');
+  li.setAttribute('role', 'button');
+  li.setAttribute('aria-expanded', String(!collapsed));
+  li.innerHTML =
+    '<svg class="chev" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+    '<svg class="folder-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
+  const label = document.createElement('span');
+  label.textContent = name;
+  const c = document.createElement('span');
+  c.className = 'count';
+  c.textContent = count;
+  li.append(label, c);
+  li.addEventListener('click', () => {
+    if (collapsedFolders.has(name)) collapsedFolders.delete(name);
+    else collapsedFolders.add(name);
+    saveCollapsed();
+    renderList();
+  });
+  return li;
+}
+
+function folderNames() {
+  return [...new Set(entries.map((e) => e.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
 function renderList() {
@@ -540,25 +674,23 @@ function renderList() {
     list.appendChild(li);
     return;
   }
-  for (const entry of items) {
-    const li = document.createElement('li');
-    if (entry.id === selectedId) li.classList.add('active');
-    const av = document.createElement('div');
-    av.className = 'avatar';
-    av.textContent = (entry.title[0] || '?').toUpperCase();
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    const t = document.createElement('div');
-    t.className = 't';
-    t.textContent = entry.title;
-    const u = document.createElement('div');
-    u.className = 'u';
-    u.textContent = entry.username || entry.url || '';
-    meta.append(t, u);
-    li.append(av, meta);
-    li.addEventListener('click', () => selectEntry(entry.id));
-    list.appendChild(li);
+  const searching = !!$('search').value.trim();
+  // Folders first (alphabetical), then logins that aren't in a folder.
+  const groups = new Map();
+  for (const e of items) {
+    const f = e.folder || '';
+    if (!groups.has(f)) groups.set(f, []);
+    groups.get(f).push(e);
   }
+  const names = [...groups.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  for (const name of names) {
+    const group = groups.get(name);
+    // Searching opens every folder; a folder holding the open login stays open too.
+    const collapsed = !searching && collapsedFolders.has(name) && !group.some((e) => e.id === selectedId);
+    list.appendChild(folderHeader(name, group.length, collapsed));
+    if (!collapsed) for (const e of group) list.appendChild(entryRow(e, true));
+  }
+  for (const e of groups.get('') || []) list.appendChild(entryRow(e, false));
 }
 
 function showPane(name) {
@@ -576,6 +708,16 @@ function selectEntry(id) {
   const e = current();
   if (!e) return showPane(null);
   $('v-title').textContent = e.title;
+  $('v-icon').replaceChildren(avatarFor(e));
+  const eyebrow = $('v-eyebrow');
+  eyebrow.replaceChildren(document.createTextNode('Login'));
+  if (e.folder) {
+    const chip = document.createElement('span');
+    chip.className = 'folder-chip';
+    chip.textContent = e.folder;
+    chip.title = 'Folder';
+    eyebrow.append(document.createTextNode(' · '), chip);
+  }
   $('v-username').textContent = e.username || '—';
   $('v-password').textContent = '••••••••••••';
   $('v-password').dataset.revealed = '';
@@ -625,10 +767,135 @@ function openEditor(entry) {
   $('e-reveal').textContent = 'Show';
   $('e-url').value = entry ? entry.url : '';
   $('e-notes').value = entry ? entry.notes : '';
+  $('e-folder').value = entry ? entry.folder || '' : '';
+  $('folder-list').replaceChildren(...folderNames().map((f) => Object.assign(document.createElement('option'), { value: f })));
+  editingIcon = entry ? entry.icon || null : null;
+  updateEditorIcon();
   updateStrength();
   showPane('edit-pane');
   $('e-title').focus();
 }
+
+// ---------- icon picker ----------
+let editingIcon = null; // icon chosen in the editor (null = automatic)
+const editorEntry = () => ({ title: $('e-title').value, url: $('e-url').value });
+function updateEditorIcon() {
+  $('e-icon').replaceChildren(avatarFor(editorEntry(), editingIcon));
+}
+$('e-title').addEventListener('input', updateEditorIcon);
+$('e-url').addEventListener('input', updateEditorIcon);
+
+const EMOJIS = '🔐 🔑 🗝️ 🛡️ 🔒 💳 🏦 💰 💵 🪙 📈 🧾 🛒 🛍️ 📦 🍔 🍕 ☕ 🎮 🎧 🎵 🎬 📺 📷 📱 💻 🖥️ ⌚ 🖨️ ☁️ 📧 💬 📞 🌐 🏠 🏢 🏫 🏥 🚗 ✈️ 🚆 🏨 🗺️ 🎓 📚 📝 🗂️ 📁 🧰 🛠️ ⚙️ 🧪 💼 👔 👨‍💻 👩‍💻 ❤️ ⭐ 🔥 ⚡ 🌱 🐾 🎁 🎉 🏆 ⚽ 🏀 🎾 🧘 💊 🩺 👶 👪'.split(' ');
+
+function iconTab(name) {
+  document.querySelectorAll('.icon-tabs .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.icon-tab').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== name));
+  if (name === 'logos') $('logo-search').focus();
+  if (name === 'emoji') $('emoji-input').focus();
+}
+document.querySelectorAll('.icon-tabs .toggle-btn').forEach((b) => b.addEventListener('click', () => iconTab(b.dataset.tab)));
+
+function chooseIcon(icon) {
+  editingIcon = icon;
+  updateEditorIcon();
+  hide($('icon-modal'));
+}
+
+function renderLogoGrid() {
+  const q = squash($('logo-search').value);
+  const grid = $('logo-grid');
+  grid.replaceChildren();
+  const list = BRANDS.filter((b) => !q || squash(b.title).includes(q) || b.id.includes(q));
+  for (const b of list) {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'icon-cell' + (editingIcon && editingIcon.type === 'brand' && editingIcon.id === b.id ? ' selected' : '');
+    const t = document.createElement('span');
+    t.className = 't';
+    t.textContent = b.title;
+    cell.append(brandTile(b), t);
+    cell.addEventListener('click', () => chooseIcon({ type: 'brand', id: b.id }));
+    grid.appendChild(cell);
+  }
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = 'No logo with that name. Try Upload to add your own image.';
+    grid.appendChild(p);
+  }
+}
+$('logo-search').addEventListener('input', renderLogoGrid);
+
+function renderEmojiGrid() {
+  const grid = $('emoji-grid');
+  grid.replaceChildren();
+  for (const em of EMOJIS) {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'icon-cell';
+    cell.textContent = em;
+    cell.addEventListener('click', () => chooseIcon({ type: 'emoji', value: em }));
+    grid.appendChild(cell);
+  }
+}
+$('emoji-input').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = $('emoji-input').value.trim();
+  if (v) chooseIcon({ type: 'emoji', value: [...v].slice(0, 8).join('') });
+});
+$('emoji-input').addEventListener('input', () => {
+  // A pasted/typed emoji is chosen straight away (anything that isn't plain letters/numbers).
+  const v = $('emoji-input').value.trim();
+  if (v && /\p{Extended_Pictographic}/u.test(v)) chooseIcon({ type: 'emoji', value: [...v].slice(0, 8).join('') });
+});
+
+$('upload-btn').addEventListener('click', () => $('upload-file').click());
+$('upload-file').addEventListener('change', async () => {
+  const file = $('upload-file').files[0];
+  $('upload-file').value = '';
+  $('upload-error').textContent = '';
+  if (!file) return;
+  if (file.size > 15 * 1024 * 1024) return ($('upload-error').textContent = 'That image is too large (over 15 MB).');
+  try {
+    // Crop to a centred square and shrink to 96×96 so it stays tiny inside the vault.
+    const bmp = await createImageBitmap(file);
+    const side = Math.min(bmp.width, bmp.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, 96, 96);
+    const data = canvas.toDataURL('image/png');
+    $('upload-preview').replaceChildren(avatarFor(editorEntry(), { type: 'image', data }));
+    chooseIcon({ type: 'image', data });
+  } catch {
+    $('upload-error').textContent = "Couldn't read that image. Try a PNG or JPG.";
+  }
+});
+
+$('letter-btn').addEventListener('click', () => chooseIcon({ type: 'letter' }));
+
+$('e-icon-btn').addEventListener('click', () => {
+  $('logo-search').value = $('e-title').value.trim();
+  renderLogoGrid();
+  if (!$('logo-grid').querySelector('.icon-cell')) {
+    $('logo-search').value = '';
+    renderLogoGrid();
+  }
+  renderEmojiGrid();
+  $('emoji-input').value = '';
+  $('upload-error').textContent = '';
+  $('upload-preview').replaceChildren(avatarFor(editorEntry(), editingIcon && editingIcon.type === 'image' ? editingIcon : { type: 'letter' }));
+  $('letter-preview').replaceChildren(avatarFor(editorEntry(), { type: 'letter' }));
+  const tab = editingIcon ? { brand: 'logos', emoji: 'emoji', image: 'upload', letter: 'letter' }[editingIcon.type] : 'logos';
+  show($('icon-modal'));
+  iconTab(tab || 'logos');
+});
+$('icon-cancel').addEventListener('click', () => hide($('icon-modal')));
+$('icon-modal').addEventListener('mousedown', (e) => {
+  if (e.target === $('icon-modal')) hide($('icon-modal'));
+});
 
 $('add-btn').addEventListener('click', async () => {
   selectedId = null;
@@ -684,6 +951,8 @@ $('edit-pane').addEventListener('submit', async (e) => {
     password: $('e-password').value,
     url: $('e-url').value,
     notes: $('e-notes').value,
+    folder: $('e-folder').value,
+    icon: editingIcon, // null = automatic (matching logo or first letter)
   });
   if (saved && saved.locked) return; // master password changed on another computer; lock screen explains
   entries = await window.api.list();
@@ -899,6 +1168,7 @@ window.addEventListener('blur', closeMenus);
 // Escape closes editor/settings.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && openMenu) return closeMenus();
+  if (e.key === 'Escape' && !$('icon-modal').classList.contains('hidden')) return hide($('icon-modal'));
   if (e.key === 'Escape' && syncMode) return closeSyncModal();
   if (e.key === 'Escape' && !$('bio-modal').classList.contains('hidden')) return closeBioModal();
   if (e.key === 'Escape' && !$('app-screen').classList.contains('hidden')) {

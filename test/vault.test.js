@@ -50,6 +50,21 @@ const { Vault, generatePassword } = require('../src/vault');
     v3.lock();
     assert.throws(() => v3.list(), /locked/);
 
+    // Folders and icons are stored; unsafe icon values are rejected.
+    const v4 = new Vault(path.join(dir, 'icons.json'));
+    await v4.create('correct horse battery');
+    const a = v4.upsert({ title: 'A', folder: '  Google accounts  ', icon: { type: 'brand', id: 'google' } });
+    assert.strictEqual(a.folder, 'Google accounts');
+    assert.deepStrictEqual(a.icon, { type: 'brand', id: 'google' });
+    assert.deepStrictEqual(v4.upsert({ title: 'B', icon: { type: 'emoji', value: '🏦' } }).icon, { type: 'emoji', value: '🏦' });
+    assert.deepStrictEqual(v4.upsert({ title: 'C', icon: { type: 'letter' } }).icon, { type: 'letter' });
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    assert.deepStrictEqual(v4.upsert({ title: 'D', icon: { type: 'image', data: png } }).icon, { type: 'image', data: png });
+    assert.strictEqual(v4.upsert({ title: 'E', icon: { type: 'image', data: 'javascript:alert(1)' } }).icon, null);
+    assert.strictEqual(v4.upsert({ title: 'F', icon: { type: 'brand', id: '"><script>' } }).icon, null);
+    assert.strictEqual(v4.upsert({ title: 'G', icon: { type: 'image', data: 'data:image/png;base64,' + 'A'.repeat(300000) } }).icon, null);
+    v4.lock();
+
     // Generator.
     const pw = generatePassword({ length: 32 });
     assert.strictEqual(pw.length, 32);

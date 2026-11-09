@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Password Vault logo: dark green tile, cream padlock, tan details -->
-  <rect width="512" height="512" rx="112" fill="#313d2a"/>
-  <rect x="26" y="26" width="460" height="460" rx="90" fill="none" stroke="#c5a882" stroke-opacity="0.45" stroke-width="6"/>
-  <path d="M176 238 V178 a80 80 0 0 1 160 0 V238" fill="none" stroke="#c5a882" stroke-width="34" stroke-linecap="round"/>
-  <rect x="136" y="222" width="240" height="190" rx="34" fill="#f4e0ca"/>
-  <circle cx="256" cy="300" r="28" fill="#313d2a"/>
-  <path d="M243 316 h26 l8 52 a6 6 0 0 1 -6 7 h-30 a6 6 0 0 1 -6 -7 z" fill="#313d2a"/>
+  <!-- Password Vault logo: tan tile, dark green padlock, keyhole cut out in the tile colour -->
+  <rect width="512" height="512" rx="112" fill="#c5a882"/>
+  <rect x="26" y="26" width="460" height="460" rx="90" fill="none" stroke="#313d2a" stroke-opacity="0.28" stroke-width="6"/>
+  <path d="M176 238 V178 a80 80 0 0 1 160 0 V238" fill="none" stroke="#313d2a" stroke-width="34" stroke-linecap="round"/>
+  <rect x="136" y="222" width="240" height="190" rx="34" fill="#313d2a"/>
+  <circle cx="256" cy="300" r="28" fill="#c5a882"/>
+  <path d="M243 316 h26 l8 52 a6 6 0 0 1 -6 7 h-30 a6 6 0 0 1 -6 -7 z" fill="#c5a882"/>
 </svg>

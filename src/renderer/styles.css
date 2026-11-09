@@ -38,6 +38,7 @@
   --shadow-modal: 0 16px 44px rgba(30, 36, 26, 0.28);
   --sidebar-w: 290px;
   --titlebar-h: 40px; /* must match TITLEBAR_HEIGHT in main.js */
+  --logo-radius: 21.875%; /* same corner as logo.svg (rx 112 of 512), so clipping and shadows follow the logo exactly */
 }
 
 /* 2. BASE ---------------------------------------------------------------- */
@@ -101,8 +102,6 @@ button.danger:hover { background: rgba(192, 57, 43, 0.08); border-color: var(--n
 button:disabled { opacity: 0.6; cursor: wait; }
 
 /* 4. LOGO ---------------------------------------------------------------- */
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand img { width: 36px; height: 36px; border-radius: 10px; }
 .brand-text {
   font-family: var(--font-display); font-weight: 700; font-size: 17px;
   letter-spacing: 0.1em; text-transform: uppercase; color: var(--cream);
@@ -121,7 +120,7 @@ button:disabled { opacity: 0.6; cursor: wait; }
   box-shadow: 0 16px 44px rgba(49, 61, 42, 0.12);
   text-align: center;
 }
-.lock-logo { width: 72px; height: 72px; border-radius: 19px; box-shadow: 0 8px 24px rgba(49, 61, 42, 0.25); }
+.lock-logo { width: 72px; height: 72px; border-radius: var(--logo-radius); box-shadow: 0 8px 24px rgba(49, 61, 42, 0.25); }
 .lock-card h1 {
   font-family: var(--font-display); font-size: 30px; font-weight: 700;
   color: var(--green); margin: 18px 0 4px;
@@ -162,7 +161,6 @@ button.eye-btn svg { width: 20px; height: 20px; display: block; }
   background: var(--green);
   color: var(--cream);
 }
-.sidebar .brand { padding: 20px 18px 16px; }
 .sidebar-top { display: flex; gap: 8px; padding: 14px 14px 14px; border-top: 0.5px solid rgba(244, 224, 202, 0.1); border-bottom: 0.5px solid rgba(244, 224, 202, 0.1); }
 .sidebar-top input {
   background: rgba(244, 224, 202, 0.07);
@@ -217,7 +215,7 @@ button.add-btn:hover { background: #d4b993; border-color: #d4b993; }
 /* page area */
 .detail { flex: 1; overflow-y: auto; padding: 36px 40px; }
 .empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; }
-.empty-logo { width: 64px; height: 64px; border-radius: 17px; margin-bottom: 12px; box-shadow: 0 8px 24px rgba(49, 61, 42, 0.2); }
+.empty-logo { width: 64px; height: 64px; border-radius: var(--logo-radius); margin-bottom: 12px; box-shadow: 0 8px 24px rgba(49, 61, 42, 0.2); }
 .empty h3 { font-family: var(--font-display); font-size: 22px; color: var(--green); }
 .empty h3 em { font-style: italic; color: var(--tan); }
 .empty p { color: var(--text-muted); font-size: 13px; }
@@ -301,7 +299,7 @@ hr { border: 0; border-top: 1px solid rgba(49, 61, 42, 0.12); margin: 18px 0 14p
   animation: banner-in 0.25s ease;
 }
 @keyframes banner-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
-.update-banner img { width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(244, 224, 202, 0.2); flex: none; }
+.update-banner img { width: 36px; height: 36px; border-radius: var(--logo-radius); flex: none; }
 .update-banner-body { flex: 1; min-width: 0; }
 .update-banner-title { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
 .update-banner-text { font-size: 12.5px; color: rgba(244, 224, 202, 0.75); margin-top: 2px; }
@@ -339,7 +337,7 @@ button.later:hover { background: rgba(244, 224, 202, 0.08); color: var(--cream);
 }
 body.mac .titlebar { padding-left: 84px; padding-right: 12px; } /* room for the Mac traffic lights */
 .titlebar-brand { display: flex; align-items: center; gap: 8px; }
-.titlebar-brand img { width: 20px; height: 20px; border-radius: 6px; }
+.titlebar-brand img { width: 20px; height: 20px; border-radius: var(--logo-radius); }
 .titlebar-brand span {
   font-family: var(--font-display); font-weight: 700; font-size: 12.5px;
   letter-spacing: 0.1em; text-transform: uppercase; color: rgba(244, 224, 202, 0.85);
@@ -489,7 +487,87 @@ button.bio-inline:hover { background: rgba(197, 168, 130, 0.26); border-color: r
 button.bio-inline svg { color: var(--tan); }
 .change-master-note { margin: -6px 0 14px; }
 
-/* 10. TOAST -------------------------------------------------------------- */
+/* 10. LOGIN ICONS & FOLDERS --------------------------------------------- */
+/* one tile used everywhere: sidebar (32px), editor (34px), detail page / picker (56px) */
+.avatar {
+  width: 32px; height: 32px; flex: none; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  font-family: var(--font-display); font-weight: 700; font-size: 15px;
+  background: rgba(197, 168, 130, 0.2); color: var(--tan);
+  border: 0.5px solid rgba(197, 168, 130, 0.3);
+}
+.avatar.brand-logo { border-color: transparent; }
+/* fixed logo sizes per tile size (percentages collapsed to 0 inside the sidebar's flex layout) */
+.avatar.brand-logo svg { width: 18px; height: 18px; flex: none; display: block; }
+.avatar-slot.big .avatar.brand-logo svg { width: 32px; height: 32px; }
+button.icon-pick .avatar.brand-logo svg { width: 17px; height: 17px; }
+.avatar.emoji { font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif; font-weight: 400; font-size: 19px; background: rgba(244, 224, 202, 0.12); }
+.avatar.image { padding: 0; background: #fff; }
+.avatar.image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-slot { display: inline-flex; }
+.avatar-slot.big .avatar { width: 56px; height: 56px; border-radius: 14px; font-size: 26px; }
+.avatar-slot.big .avatar.emoji { font-size: 32px; }
+/* on light backgrounds (detail page, editor, picker) the empty-letter tile needs more contrast */
+.detail .avatar:not(.brand-logo):not(.image), .modal .avatar:not(.brand-logo):not(.image) { background: rgba(197, 168, 130, 0.22); color: var(--green); border-color: rgba(197, 168, 130, 0.45); }
+
+.title-with-icon { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.folder-chip {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: 4px;
+  padding: 1px 9px; border-radius: var(--radius-pill);
+  background: rgba(197, 168, 130, 0.18); border: 1px solid rgba(197, 168, 130, 0.4);
+  color: var(--green); letter-spacing: 0.04em; text-transform: none; font-size: 11.5px;
+}
+
+button.icon-pick {
+  height: 40px; padding: 0 10px 0 4px; gap: 6px; flex: none;
+  background: #fff; border: 1px solid rgba(49, 61, 42, 0.2); border-radius: var(--radius-small);
+}
+button.icon-pick .avatar { width: 30px; height: 30px; border-radius: 7px; font-size: 14px; }
+.icon-pick-label { font-size: 12px; color: var(--text-muted); }
+
+/* folder groups in the sidebar */
+.folder-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 10px; margin: 6px 0 2px; border-radius: 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em;
+  color: rgba(244, 224, 202, 0.65);
+}
+.folder-head:hover { background: rgba(244, 224, 202, 0.06); color: var(--cream); }
+.folder-head .chev { width: 10px; transition: transform 0.15s; color: var(--tan); }
+.folder-head.collapsed .chev { transform: rotate(-90deg); }
+.folder-head .folder-ico { color: var(--tan); }
+.folder-head .count {
+  margin-left: auto; font-size: 10px; letter-spacing: 0; padding: 1px 7px; border-radius: var(--radius-pill);
+  background: rgba(197, 168, 130, 0.18); color: var(--tan);
+}
+.entry-list li.in-folder { margin-left: 10px; }
+
+/* icon picker */
+.icon-modal { width: min(600px, 100%); }
+.icon-tabs { margin: 12px 0 14px; }
+.toggle { display: inline-flex; background: rgba(49, 61, 42, 0.06); border-radius: var(--radius-pill); padding: 3px; gap: 2px; }
+button.toggle-btn { height: 30px; padding: 0 16px; border-radius: var(--radius-pill); font-size: 12.5px; font-weight: 500; border: none; background: transparent; color: var(--text-muted); }
+button.toggle-btn:hover { background: transparent; color: var(--green); border: none; }
+button.toggle-btn.active { background: var(--green); color: var(--cream); }
+.icon-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px;
+  max-height: 290px; overflow-y: auto; margin: 12px 0 8px; padding: 2px;
+}
+button.icon-cell {
+  height: auto; padding: 8px 4px 6px; flex-direction: column; gap: 5px;
+  background: #fff; border: 1px solid rgba(49, 61, 42, 0.1); border-radius: 10px;
+  font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden;
+}
+button.icon-cell span.t { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+button.icon-cell:hover { border-color: var(--tan); background: rgba(197, 168, 130, 0.1); }
+button.icon-cell.selected { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.emoji-grid { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
+.emoji-grid button.icon-cell { font-size: 24px; padding: 6px 0; font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif; }
+.upload-area { display: flex; align-items: center; gap: 18px; padding: 10px 2px 4px; }
+.upload-area .hint { margin-top: 8px; }
+
+/* 11. TOAST -------------------------------------------------------------- */
 .toast {
   position: fixed; bottom: 2rem; right: 2rem; z-index: 10000;
   background: var(--green); color: var(--cream);

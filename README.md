@@ -13,6 +13,17 @@ An offline, encrypted password manager for Windows and Mac.
 
 > ⚠️ If you forget your master password, your data **cannot be recovered**.
 
+## Folders and icons
+- **Folders:** when adding or editing a login, type a name in **Folder**, e.g. "Google accounts". Logins in the same folder are grouped in the sidebar; click a folder's name to open or close it. Existing folder names are suggested as you type.
+- **Icons:** click **Icon** next to the name to choose:
+  - **Logos:** over 100 well-known brands (Apple, Google, Netflix, banks and more).
+  - **Emoji:** pick one, or type or paste any emoji.
+  - **Upload:** your own image. It's cropped to a square, made small and stored encrypted in your vault, so it syncs with everything else.
+  - **Letter:** the first letter of the name.
+- **Automatic logos:** if you don't choose an icon, a matching logo is shown automatically when the name or website matches a known brand (e.g. "GitHub" or `netflix.com`).
+
+Brand logos come from [Simple Icons](https://simpleicons.org) (CC0). Brand names and logos are trademarks of their owners and are only used to label your own accounts. Some companies (e.g. Microsoft) have asked for their logos to be removed from Simple Icons; use **Upload** for those.
+
 ## Unlock with Touch ID or Windows Hello
 On a Mac with **Touch ID**, or a Windows PC with **Windows Hello** (fingerprint reader, face camera or Hello PIN), go to **Settings → Unlock with Touch ID / Windows Hello → Turn on**. Confirm with your master password and your fingerprint or face.
 

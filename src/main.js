@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 const { app, BrowserWindow, ipcMain, clipboard, shell, powerMonitor, Menu, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -98,7 +98,10 @@ function createWindow() {
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 14, y: 13 } }
-      : { titleBarOverlay: { color: '#313d2a', symbolColor: '#f4e0ca', height: TITLEBAR_HEIGHT } }),
+      // Windows draws its button strip with its own rounding, which at some display scalings
+      // (e.g. 150%) came out 1 pixel taller than our bar and stuck out underneath. Making the strip
+      // a pixel shorter keeps it fully inside the green bar at every scaling.
+      : { titleBarOverlay: { color: '#313d2a', symbolColor: '#f4e0ca', height: TITLEBAR_HEIGHT - 1 } }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -129,7 +132,7 @@ function buildMenu() {
       label: 'Vault',
       submenu: [
         { label: 'Lock Now', accelerator: 'CmdOrCtrl+L', click: () => lockVault('manual') },
-        { label: 'Check for Updatesâ€¦', click: () => updater.check(true) },
+        { label: 'Check for Updates…', click: () => updater.check(true) },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ],

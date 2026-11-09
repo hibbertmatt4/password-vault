@@ -116,9 +116,12 @@
       <!-- View entry -->
       <div id="view-pane" class="pane hidden">
         <div class="pane-head">
-          <div>
-            <div class="page-eyebrow">Login</div>
-            <h2 id="v-title" class="page-title"></h2>
+          <div class="title-with-icon">
+            <div id="v-icon" class="avatar-slot big"></div>
+            <div>
+              <div class="page-eyebrow"><span id="v-eyebrow">Login</span></div>
+              <h2 id="v-title" class="page-title"></h2>
+            </div>
           </div>
           <div class="actions">
             <button id="edit-btn">Edit</button>
@@ -152,7 +155,16 @@
           </div>
         </div>
         <div class="card">
-          <div class="field"><label for="e-title">Name</label><input id="e-title" placeholder="e.g. Gmail" /></div>
+          <div class="field"><label for="e-title">Name</label>
+            <div class="row">
+              <button type="button" id="e-icon-btn" class="icon-pick" title="Choose an icon" aria-label="Choose an icon"><span id="e-icon" class="avatar-slot"></span><span class="icon-pick-label">Icon</span></button>
+              <input id="e-title" placeholder="e.g. Gmail" />
+            </div>
+          </div>
+          <div class="field"><label for="e-folder">Folder</label>
+            <input id="e-folder" list="folder-list" placeholder="No folder — type a name to create one, e.g. Google accounts" />
+            <datalist id="folder-list"></datalist>
+          </div>
           <div class="field"><label for="e-username">Username / email</label><input id="e-username" /></div>
           <div class="field"><label for="e-password">Password</label>
             <div class="row">
@@ -285,6 +297,56 @@
     </form>
   </div>
 
+  <!-- Icon picker: brand logos, emoji, your own image, or the first letter -->
+  <div id="icon-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="icon-modal-title">
+    <div class="modal icon-modal">
+      <h3 id="icon-modal-title" class="modal-title">Choose an icon</h3>
+      <div class="toggle icon-tabs" role="tablist">
+        <button type="button" class="toggle-btn active" data-tab="logos" role="tab">Logos</button>
+        <button type="button" class="toggle-btn" data-tab="emoji" role="tab">Emoji</button>
+        <button type="button" class="toggle-btn" data-tab="upload" role="tab">Upload</button>
+        <button type="button" class="toggle-btn" data-tab="letter" role="tab">Letter</button>
+      </div>
+
+      <div class="icon-tab" data-panel="logos">
+        <input id="logo-search" type="search" placeholder="Search logos — Apple, Google, Netflix…" />
+        <div id="logo-grid" class="icon-grid"></div>
+        <p class="hint">Logos from Simple Icons. Can't find one? Use <strong>Upload</strong> to add your own.</p>
+      </div>
+
+      <div class="icon-tab hidden" data-panel="emoji">
+        <input id="emoji-input" placeholder="Type or paste any emoji here" maxlength="16" />
+        <div id="emoji-grid" class="icon-grid emoji-grid"></div>
+      </div>
+
+      <div class="icon-tab hidden" data-panel="upload">
+        <div class="upload-area">
+          <div id="upload-preview" class="avatar-slot big"></div>
+          <div>
+            <button type="button" id="upload-btn" class="primary">Choose an image…</button>
+            <p class="hint">PNG, JPG or WebP. It's cropped to a square, made small, and stored encrypted inside your vault.</p>
+            <p id="upload-error" class="error"></p>
+          </div>
+        </div>
+        <input id="upload-file" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" />
+      </div>
+
+      <div class="icon-tab hidden" data-panel="letter">
+        <div class="upload-area">
+          <div id="letter-preview" class="avatar-slot big"></div>
+          <div>
+            <p class="hint">Show the first letter of the name, like before.</p>
+            <button type="button" id="letter-btn" class="primary">Use the letter</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" id="icon-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Turn on Touch ID / Windows Hello: confirm master password -->
   <div id="bio-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="bio-modal-title">
     <form id="bio-form" class="modal" autocomplete="off">
@@ -320,6 +382,7 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
+  <script src="brand-icons.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

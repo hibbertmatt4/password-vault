@@ -41,6 +41,21 @@ function decrypt(key, payload) {
   return JSON.parse(out.toString('utf8'));
 }
 
+// A login's picture: a known brand logo, an emoji, or an uploaded image (kept small, stored encrypted).
+const MAX_IMAGE_CHARS = 200 * 1024;
+function cleanIcon(icon) {
+  if (!icon || typeof icon !== 'object') return null;
+  if (icon.type === 'letter') return { type: 'letter' }; // "always show the first letter" (no automatic logo)
+  if (icon.type === 'brand' && /^[a-z0-9]{1,40}$/.test(String(icon.id))) return { type: 'brand', id: String(icon.id) };
+  if (icon.type === 'emoji' && typeof icon.value === 'string' && icon.value.trim() && [...icon.value].length <= 8) {
+    return { type: 'emoji', value: icon.value.trim() };
+  }
+  if (icon.type === 'image' && typeof icon.data === 'string' && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(icon.data) && icon.data.length <= MAX_IMAGE_CHARS) {
+    return { type: 'image', data: icon.data };
+  }
+  return null;
+}
+
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 
 // Older vaults stored a plain array of entries.
@@ -206,6 +221,8 @@ class Vault {
       password: String(entry.password || ''),
       url: String(entry.url || '').trim(),
       notes: String(entry.notes || ''),
+      folder: String(entry.folder || '').trim().slice(0, 60),
+      icon: cleanIcon(entry.icon),
     };
     let saved;
     if (entry.id) {
