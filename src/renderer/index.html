@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <title>Password Vault</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Lock screen -->
+  <section id="lock-screen" class="screen">
+    <div class="lock-card">
+      <img class="lock-logo" src="logo.svg" alt="" />
+      <h1>Password <em>Vault</em></h1>
+      <p id="lock-subtitle" class="page-sub"></p>
+      <form id="lock-form" autocomplete="off">
+        <div class="pw-wrap">
+          <input id="master" type="password" placeholder="Master password" autofocus />
+          <button type="button" class="eye-btn" data-target="master" title="Show password" aria-label="Show password"></button>
+        </div>
+        <div class="pw-wrap hidden" id="master-confirm-wrap">
+          <input id="master-confirm" type="password" placeholder="Confirm master password" />
+          <button type="button" class="eye-btn" data-target="master-confirm" title="Show password" aria-label="Show password"></button>
+        </div>
+        <div id="create-warning" class="warning hidden">
+          Choose something long and memorable. <strong>If you forget your master password, your passwords cannot be recovered</strong> — not even by you.
+        </div>
+        <button id="lock-submit" type="submit" class="primary"></button>
+        <p id="lock-error" class="error" role="alert"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- Main app -->
+  <section id="app-screen" class="screen hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="logo.svg" alt="" />
+        <span class="brand-text">Password <span class="accent">Vault</span></span>
+      </div>
+      <div class="sidebar-top">
+        <input id="search" type="search" placeholder="Search…" />
+        <button id="add-btn" class="add-btn" title="Add a new password">+ Add</button>
+      </div>
+      <div class="nav-label">Your logins</div>
+      <ul id="entry-list" class="entry-list"></ul>
+      <div class="sidebar-bottom">
+        <button id="settings-btn">Settings <span id="update-dot" class="update-dot hidden" title="Update available"></span></button>
+        <button id="lock-btn">Lock</button>
+      </div>
+    </aside>
+
+    <main class="detail scroll-thin">
+      <div id="empty-state" class="empty">
+        <img class="empty-logo" src="logo.svg" alt="" />
+        <h3>Your vault is <em>ready</em></h3>
+        <p>Select a login on the left, or click <strong>+ Add</strong> to save a new one.</p>
+      </div>
+
+      <!-- View entry -->
+      <div id="view-pane" class="pane hidden">
+        <div class="pane-head">
+          <div>
+            <div class="page-eyebrow">Login</div>
+            <h2 id="v-title" class="page-title"></h2>
+          </div>
+          <div class="actions">
+            <button id="edit-btn">Edit</button>
+            <button id="delete-btn" class="danger">Delete</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="field"><label>Username / email</label>
+            <div class="row"><span id="v-username" class="value"></span><button data-copy="username">Copy</button></div>
+          </div>
+          <div class="field"><label>Password</label>
+            <div class="row"><span id="v-password" class="value mono"></span>
+              <button id="reveal-btn">Show</button><button data-copy="password" class="primary">Copy</button></div>
+          </div>
+          <div class="field" id="v-url-field"><label>Website</label>
+            <div class="row"><span id="v-url" class="value"></span><button id="open-url-btn">Open</button></div>
+          </div>
+          <div class="field" id="v-notes-field"><label>Notes</label>
+            <div id="v-notes" class="value notes"></div>
+          </div>
+        </div>
+        <p id="v-meta" class="meta-line"></p>
+      </div>
+
+      <!-- Edit entry -->
+      <form id="edit-pane" class="pane hidden" autocomplete="off">
+        <div class="pane-head">
+          <div>
+            <div class="page-eyebrow">Login details</div>
+            <h2 id="e-heading" class="page-title">New entry</h2>
+          </div>
+        </div>
+        <div class="card">
+          <div class="field"><label for="e-title">Name</label><input id="e-title" placeholder="e.g. Gmail" /></div>
+          <div class="field"><label for="e-username">Username / email</label><input id="e-username" /></div>
+          <div class="field"><label for="e-password">Password</label>
+            <div class="row">
+              <input id="e-password" type="password" class="mono" />
+              <button type="button" id="e-reveal">Show</button>
+            </div>
+            <div class="strength"><div id="strength-bar"></div></div>
+            <span id="strength-label"></span>
+          </div>
+          <div class="generator">
+            <div class="row">
+              <label class="inline">Length <input id="g-length" type="range" min="8" max="64" value="20" /> <span id="g-length-val">20</span></label>
+              <button type="button" id="g-btn">Generate new</button>
+            </div>
+            <div class="row checks">
+              <label class="inline"><input type="checkbox" id="g-upper" checked /> A–Z</label>
+              <label class="inline"><input type="checkbox" id="g-lower" checked /> a–z</label>
+              <label class="inline"><input type="checkbox" id="g-digits" checked /> 0–9</label>
+              <label class="inline"><input type="checkbox" id="g-symbols" checked /> !@#</label>
+            </div>
+          </div>
+          <div class="field"><label for="e-url">Website</label><input id="e-url" placeholder="example.com" /></div>
+          <div class="field"><label for="e-notes">Notes</label><textarea id="e-notes" rows="4"></textarea></div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" id="cancel-btn">Cancel</button>
+        </div>
+      </form>
+
+      <!-- Settings -->
+      <form id="settings-pane" class="pane hidden" autocomplete="off">
+        <div class="pane-head">
+          <div>
+            <div class="page-eyebrow">Settings</div>
+            <h2 class="page-title">Your <em>settings</em></h2>
+          </div>
+        </div>
+
+        <div class="card update-card">
+          <div class="card-title">App updates</div>
+          <div class="update-row">
+            <div>
+              <div class="update-version">Version <span id="current-version"></span></div>
+              <div id="update-text" class="update-text">Password Vault checks for updates automatically.</div>
+              <div id="settings-progress" class="progress hidden"><span></span></div>
+            </div>
+            <div class="actions">
+              <button type="button" id="update-action" class="primary hidden"></button>
+              <button type="button" id="check-updates-btn">Check for updates</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Change master password</div>
+          <div class="field"><label for="s-current">Current master password</label><input id="s-current" type="password" /></div>
+          <div class="field"><label for="s-new">New master password</label><input id="s-new" type="password" /></div>
+          <div class="field"><label for="s-confirm">Confirm new master password</label><input id="s-confirm" type="password" /></div>
+          <div class="form-actions">
+            <button type="submit" class="primary">Change password</button>
+            <button type="button" id="settings-cancel">Cancel</button>
+          </div>
+          <p id="settings-msg" class="small" role="alert"></p>
+          <hr />
+          <p class="settings-note">Your vault is encrypted with AES-256-GCM using a key derived from your master password (scrypt). It is stored only on this computer and locks automatically after 5 minutes of inactivity. Copied passwords are cleared from the clipboard after 30 seconds.</p>
+        </div>
+      </form>
+    </main>
+  </section>
+
+  <!-- "Update available" banner (shows on every screen) -->
+  <div id="update-banner" class="update-banner hidden" role="status">
+    <img src="logo.svg" alt="" />
+    <div class="update-banner-body">
+      <div id="banner-title" class="update-banner-title"></div>
+      <div id="banner-text" class="update-banner-text"></div>
+      <div id="banner-progress" class="progress hidden"><span></span></div>
+    </div>
+    <div class="update-banner-actions">
+      <button type="button" id="banner-action" class="tan"></button>
+      <button type="button" id="banner-later" class="later">Later</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>
