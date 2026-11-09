@@ -510,21 +510,52 @@ async function renderSync(status) {
   $('sync-setup').textContent = s.synced ? 'Change folder' : 'Set up sync';
   $('sync-stop').classList.toggle('hidden', !s.synced);
   $('sync-how').classList.toggle('hidden', !s.synced);
-  $('sync-notify-row').classList.toggle('hidden', !s.synced);
-  if (s.synced) $('sync-notify').checked = (await window.api.getPrefs()).notifyChanges;
+  renderNotify();
 }
 
-$('sync-notify').addEventListener('change', async () => {
-  const p = await window.api.setPref('notifyChanges', $('sync-notify').checked);
-  $('sync-notify').checked = p.notifyChanges;
-  toast(p.notifyChanges ? "You'll be told when your other computers make changes" : "You won't be told about changes from other computers");
-});
+// ---------- Notifications (Settings) ----------
+async function renderNotify(state) {
+  const s = state || (await window.api.notifyGet());
+  document.querySelectorAll('[data-notify]').forEach((box) => (box.checked = !!s.prefs[box.dataset.notify]));
+  // Password changes only come from other computers, so those switches need sync.
+  document.querySelectorAll('.notify-change').forEach((row) => row.classList.toggle('hidden', !s.synced));
+  $('notify-intro').textContent = s.synced
+    ? 'Choose what Password Vault tells you about. Notifications still arrive while the window is closed or the vault is locked.'
+    : 'Choose what Password Vault tells you about. Turn on sync to also hear about changes from your other computers.';
+  $('notify-scope-wrap').classList.toggle('hidden', !s.synced);
+  document.querySelectorAll('[data-scope]').forEach((b) => {
+    const on = b.dataset.scope === s.scope;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+  $('notify-scope-text').textContent =
+    s.scope === 'all'
+      ? 'Changes here apply to every computer that syncs this vault, unless a computer is set to “Only this computer”.'
+      : 'These choices are for this computer only. Your other computers keep their own.';
+}
 
-// Another computer added, changed or deleted a password while you're looking at the app.
-window.api.onRemoteChanges((msg) => {
-  if (!$('app-screen').classList.contains('hidden')) toast(msg);
+const NOTIFY_NAMES = { added: 'new passwords', updated: 'changed passwords', deleted: 'deleted passwords', updates: 'app updates' };
+document.querySelectorAll('[data-notify]').forEach((box) =>
+  box.addEventListener('change', async () => {
+    const s = await window.api.notifySet(box.dataset.notify, box.checked);
+    if (s.locked) return;
+    renderNotify(s);
+    const where = s.synced && s.scope === 'all' ? ' on all your computers' : '';
+    toast(`Notifications for ${NOTIFY_NAMES[box.dataset.notify]} ${box.checked ? 'on' : 'off'}${where}`);
+  })
+);
+document.querySelectorAll('[data-scope]').forEach((b) =>
+  b.addEventListener('click', async () => {
+    const s = await window.api.notifyScope(b.dataset.scope);
+    if (s.locked) return;
+    renderNotify(s);
+    toast(s.scope === 'all' ? 'These choices now apply to all your computers' : 'This computer now keeps its own choices');
+  })
+);
+// Another computer changed the shared choices.
+window.api.onNotifyChanged((s) => {
+  if (!$('settings-pane').classList.contains('hidden')) renderNotify(s);
 });
-
 $('sync-setup').addEventListener('click', () => openSyncModal('enable'));
 $('sync-open-folder').addEventListener('click', () => window.api.syncShowFolder());
 $('sync-stop').addEventListener('click', async () => {

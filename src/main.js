@@ -1,8 +1,8 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, clipboard, shell, powerMonitor, Menu, dialog, Tray, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, clipboard, shell, powerMonitor, Menu, dialog, Tray, nativeImage, Notification, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { Vault, generatePassword } = require('./vault');
+const { Vault, generatePassword, readFeed, readShared, setDeviceId } = require('./vault');
 const sync = require('./sync');
 const biometric = require('./biometric');
 const updater = require('./updater');
@@ -41,19 +41,113 @@ function watchVault() {
 function checkForRemoteChanges() {
   if (!vault) return;
   if (!vault.isUnlocked()) return checkWhileLocked();
-  lockedNoticeSent = false;
   const res = vault.syncFromDisk();
   if (res.needsUnlock) return send('vault:locked', 'password-changed');
   const merged = vault.mergeConflictCopies();
   if (res.changed || merged) send('vault:changed');
+  rememberNotifyKey();
+  followShared(vault.shared);
   reportRemoteChanges();
+  markFeedSeen(); // everything in the change list has now been reported (or was made here)
   send('sync:status', syncStatus());
 }
 
 // ---------- telling you when another computer adds, changes or deletes a password ----------
+// Always a system notification (Windows / Mac notification centre), whether the window is open,
+// closed to the tray / menu bar, or the vault is locked. Only a fully quit app can't notify.
 const THIS_DEVICE = process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows PC' : 'computer';
+const GENERIC_NOTICE_GAP_MS = 10 * 60 * 1000;
 let changeNotification = null; // keep a reference so Windows doesn't drop the click handler
-let lockedNoticeSent = false; // only one "something changed" notice per locked spell
+let notifyKey = null; // reads the vault's change list while locked (never passwords)
+const seenFeed = new Set(); // change-list items already handled
+let lastGenericNotice = 0;
+
+const notifyKeyFile = () => path.join(app.getPath('userData'), 'notify-key.json');
+
+// Which notifications to show (Settings → Notifications). Kept per computer; when this computer is set to
+// "All my computers", it follows (and publishes) the choices stored, encrypted, in the synced vault file.
+const NOTIFY_KINDS = ['added', 'updated', 'deleted', 'updates'];
+const DEFAULT_NOTIFY = { added: true, updated: true, deleted: true, updates: true };
+const notifyPrefs = () => ({ ...DEFAULT_NOTIFY, ...(settings.get('notify') || {}) });
+const notifyScope = () => (settings.get('notifyScope') === 'device' ? 'device' : 'all');
+const isSynced = () => !!vault && !samePath(vault.filePath, localPath);
+const cleanNotify = (n) => Object.fromEntries(NOTIFY_KINDS.map((k) => [k, n[k] !== false]));
+
+function notifyState() {
+  return { prefs: notifyPrefs(), scope: notifyScope(), synced: isSynced() };
+}
+
+// Another computer changed the shared choices: take them on, unless this computer keeps its own.
+function followShared(shared) {
+  if (!shared || !shared.notify || notifyScope() !== 'all' || !isSynced()) return;
+  if (shared.updatedAt <= (settings.get('notifySharedAt') || '')) return;
+  settings.set('notify', cleanNotify(shared.notify));
+  settings.set('notifySharedAt', shared.updatedAt);
+  send('notify:changed', notifyState());
+}
+
+// This computer's choices become everyone's (only while unlocked: the vault file has to be saved).
+function publishShared() {
+  if (notifyScope() !== 'all' || !isSynced() || !vault.isUnlocked()) return;
+  const shared = vault.setShared({ notify: notifyPrefs() });
+  settings.set('notifySharedAt', shared.updatedAt);
+}
+
+// Keep the notify key sealed by the operating system (Keychain / Windows protected storage),
+// so notifications can name the changed login even after the app restarts locked.
+function rememberNotifyKey() {
+  if (!vault.notifyKey || (notifyKey && notifyKey.equals(vault.notifyKey))) return;
+  notifyKey = Buffer.from(vault.notifyKey);
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return;
+    const sealed = safeStorage.encryptString(notifyKey.toString('base64')).toString('base64');
+    fs.writeFileSync(notifyKeyFile(), JSON.stringify({ sealed }), { mode: 0o600 });
+  } catch {
+    /* notifications fall back to a general notice while locked */
+  }
+}
+
+function loadNotifyKey() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return;
+    const { sealed } = JSON.parse(fs.readFileSync(notifyKeyFile(), 'utf8'));
+    notifyKey = Buffer.from(safeStorage.decryptString(Buffer.from(sealed, 'base64')), 'base64');
+  } catch {
+    notifyKey = null;
+  }
+}
+
+const readChangeList = () => (notifyKey && vault ? readFeed(vault.filePath, notifyKey) : null);
+
+function markFeedSeen() {
+  const feed = readChangeList();
+  if (!feed) return;
+  for (const f of feed) seenFeed.add(f.id);
+  const newest = feed.reduce((m, f) => (f.at > m ? f.at : m), '');
+  if (newest && newest > (settings.get('feedSeenUntil') || '')) settings.set('feedSeenUntil', newest);
+}
+
+// Several entries for one login (e.g. added, then edited) become one.
+function collapse(items) {
+  const byLogin = new Map();
+  for (const f of items) {
+    const prev = byLogin.get(f.login);
+    byLogin.set(f.login, prev && prev.kind === 'added' && f.kind === 'updated' ? { ...f, kind: 'added' } : f);
+  }
+  return [...byLogin.values()];
+}
+
+// New items in the change list made by other computers. `since` (a time) is used once at start-up,
+// to report what changed while this computer was off.
+function takeNewFeedItems(since) {
+  const feed = readChangeList();
+  if (!feed) return null;
+  const fresh = feed.filter((f) => !seenFeed.has(f.id));
+  fresh.forEach((f) => seenFeed.add(f.id));
+  markFeedSeen();
+  const mine = settings.get('deviceId');
+  return collapse(fresh.filter((f) => f.device !== mine && (!since || f.at > since)));
+}
 
 const placeOf = (device) => (!device ? 'on another computer' : device === THIS_DEVICE ? `on your other ${device}` : `on your ${device}`);
 
@@ -85,18 +179,22 @@ function notify(title, body) {
   changeNotification.show();
 }
 
-function reportRemoteChanges() {
-  const list = vault.takeRemoteChanges();
-  if (!list.length || !prefs().notifyChanges) return;
+function reportChanges(list) {
+  const wanted = notifyPrefs();
+  list = (list || []).filter((c) => wanted[c.kind]);
+  if (!list.length) return;
   const msg = describeRemoteChanges(list);
-  // Looking at the app already: a message inside it is enough. Otherwise a system notification.
-  if (win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()) return send('sync:remoteChanges', msg.short);
   notify(msg.title, msg.body);
 }
 
-// While locked the vault can't be read, but we can still see that the synced file changed.
+// Unlocked: the vault itself says exactly what came in from the other computer.
+function reportRemoteChanges() {
+  reportChanges(vault.takeRemoteChanges());
+}
+
+// Locked (window closed, or started at sign-in): read the change list with the notify key.
 function checkWhileLocked() {
-  if (!prefs().notifyChanges || lockedNoticeSent || samePath(vault.filePath, localPath)) return; // only synced vaults
+  if (samePath(vault.filePath, localPath)) return; // only synced vaults change from elsewhere
   const now = vault.fileHash();
   if (!now) return;
   if (!vault.seenHash) {
@@ -105,8 +203,25 @@ function checkWhileLocked() {
   }
   if (now === vault.seenHash) return;
   vault.seenHash = now;
-  lockedNoticeSent = true;
+  if (notifyKey) followShared(readShared(vault.filePath, notifyKey));
+  const items = takeNewFeedItems();
+  if (items) return reportChanges(items);
+  // No readable change list (vault not unlocked on this computer since installing this version,
+  // the master password was changed elsewhere, or the other computer runs an older version).
+  const p = notifyPrefs();
+  if (!(p.added || p.updated || p.deleted) || Date.now() - lastGenericNotice < GENERIC_NOTICE_GAP_MS) return;
+  lastGenericNotice = Date.now();
   notify('Your passwords were changed on another computer', 'Open Password Vault and unlock it to see what’s new.');
+}
+
+// At start-up: report what other computers changed while this one was off, then keep watching.
+function catchUpOnStart() {
+  if (!vault || samePath(vault.filePath, localPath)) return;
+  if (notifyKey) followShared(readShared(vault.filePath, notifyKey));
+  const since = settings.get('feedSeenUntil');
+  const items = takeNewFeedItems(since || '9999'); // first run with this feature: just remember what's there
+  vault.seenHash = vault.fileHash();
+  reportChanges(items);
 }
 
 // Where the vault is, e.g. "OneDrive". Falls back to the name saved when sync was set up,
@@ -158,7 +273,6 @@ const startedHidden =
 const prefs = () => ({
   keepRunning: settings.get('keepRunning') !== false, // on unless turned off
   openAtLogin: settings.get('openAtLogin') !== false,
-  notifyChanges: settings.get('notifyChanges') !== false,
 });
 
 function showWindow() {
@@ -587,11 +701,31 @@ function registerIpc() {
   // Settings: keep running in the tray / open at sign-in.
   ipcMain.handle('prefs:get', () => ({ ...prefs(), platform: process.platform, installed: app.isPackaged }));
   ipcMain.handle('prefs:set', (_e, key, value) => {
-    if (!['keepRunning', 'openAtLogin', 'notifyChanges'].includes(key)) return prefs();
+    if (!['keepRunning', 'openAtLogin'].includes(key)) return prefs();
     settings.set(key, !!value);
     applyBackgroundPrefs();
     return { ...prefs(), platform: process.platform, installed: app.isPackaged };
   });
+
+  // Settings → Notifications.
+  ipcMain.handle('notify:get', () => notifyState());
+  ipcMain.handle(
+    'notify:set',
+    guarded(async (_e, kind, on) => {
+      if (!NOTIFY_KINDS.includes(kind)) return notifyState();
+      settings.set('notify', { ...notifyPrefs(), [kind]: !!on });
+      publishShared();
+      return notifyState();
+    })
+  );
+  ipcMain.handle(
+    'notify:scope',
+    guarded(async (_e, scope) => {
+      settings.set('notifyScope', scope === 'device' ? 'device' : 'all');
+      publishShared(); // "All my computers": this computer's choices now apply everywhere
+      return notifyState();
+    })
+  );
 
   ipcMain.handle('update:status', () => updater.getStatus());
   ipcMain.handle('update:check', () => updater.check(true));
@@ -635,7 +769,17 @@ if (!app.requestSingleInstanceLock()) {
     localPath = path.join(userData, 'vault.json');
     backupDir = path.join(userData, 'backups');
     settings = new sync.Settings(path.join(userData, 'settings.json'));
+    if (!settings.get('deviceId')) settings.set('deviceId', require('crypto').randomUUID());
+    setDeviceId(settings.get('deviceId'));
+    // 1.7–1.8 had a single on/off switch for change notifications.
+    if (settings.get('notifyChanges') === false && !settings.get('notify')) {
+      settings.set('notify', { added: false, updated: false, deleted: false, updates: true });
+    }
+    settings.set('notifyChanges', null);
+    updater.setNotificationFilter(() => notifyPrefs().updates);
     openVaultAt(settings.get('vaultPath') || localPath);
+    loadNotifyKey();
+    catchUpOnStart();
     registerIpc();
     buildMenu();
     createWindow();

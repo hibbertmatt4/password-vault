@@ -117,6 +117,61 @@ const cleanFolderName = (name) => String(name || '').trim().replace(/\s+/g, ' ')
 // Which kind of computer made an edit, so the other computer can say "updated on your Mac".
 const THIS_DEVICE = process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows PC' : 'computer';
 
+// ---------- change feed (for notifications while locked) ----------
+// Each save also writes a short list of recent changes (login name, added/updated/deleted, which computer).
+// It's encrypted with a separate "notify key" derived one-way from the vault key, which each computer keeps
+// sealed by the operating system. So a locked app can still say "GitHub was updated on your Mac", while the
+// notify key can never be used to read passwords.
+const FEED_MAX = 100;
+const FEED_DAYS = 30;
+let deviceId = null; // random id for this computer, so it doesn't notify itself
+const setDeviceId = (id) => (deviceId = id || null);
+const notifyKeyFrom = (key) => Buffer.from(crypto.hkdfSync('sha256', key, Buffer.alloc(0), 'password-vault notify feed v1', 32));
+
+function decryptFeed(notifyKey, file) {
+  try {
+    if (!file || !file.feed) return null;
+    const list = decrypt(notifyKey, file.feed);
+    return Array.isArray(list) ? list : null;
+  } catch {
+    return null;
+  }
+}
+
+// Settings shared by all computers using this vault (e.g. which notifications to show): { updatedAt, notify: {...} }.
+// Encrypted with the notify key too, so a locked computer can still follow them.
+function decryptShared(notifyKey, file) {
+  try {
+    if (!file || !file.shared) return null;
+    const s = decrypt(notifyKey, file.shared);
+    return s && typeof s === 'object' && s.updatedAt ? s : null;
+  } catch {
+    return null;
+  }
+}
+const newerShared = (a, b) => (!a ? b : !b ? a : b.updatedAt > a.updatedAt ? b : a);
+
+/** Read a vault file's shared settings with a notify key (works while locked), or null. */
+function readShared(filePath, notifyKey) {
+  try {
+    return decryptShared(notifyKey, JSON.parse(fs.readFileSync(filePath, 'utf8')));
+  } catch {
+    return null;
+  }
+}
+
+/** Read a vault file's change feed with a notify key (works while locked). Null if there's none or the key doesn't fit. */
+function readFeed(filePath, notifyKey) {
+  try {
+    return decryptFeed(notifyKey, JSON.parse(fs.readFileSync(filePath, 'utf8')));
+  } catch {
+    return null;
+  }
+}
+
+// A frozen copy of the login list (edits replace the list and its items, but never change them in place).
+const snapshot = (data) => ({ entries: [...normalize(data).entries] });
+
 // What changed between two copies of the vault, login by login: [{ kind: added|updated|deleted, id, title, changedOn }].
 function diffEntries(before, after) {
   const old = new Map(normalize(before).entries.map((e) => [e.id, e]));
@@ -147,6 +202,19 @@ class Vault {
     this.seenHash = null; // the file as it was when we locked (to notice other computers' edits while locked)
     this.lastSync = null;
     this.remoteChanges = new Map(); // logins changed by another computer, not yet reported (id → change)
+    this.notifyKey = null; // decrypts the change feed (see above)
+    this.diskData = null; // the vault as it is in the file on disk, to tell which changes a save adds
+    this.shared = null; // settings shared by all computers (see decryptShared)
+  }
+
+  /** Change the settings shared by all computers and save them straight away. */
+  setShared(values) {
+    this._requireUnlocked();
+    this.syncFromDisk();
+    this._requireUnlocked();
+    this.shared = { ...(this.shared || {}), ...values, updatedAt: new Date().toISOString() };
+    this._write();
+    return this.shared;
   }
 
   /** Changes other computers made since the last call (and forget them). */
@@ -186,6 +254,7 @@ class Vault {
     this.salt = crypto.randomBytes(32);
     this.kdf = { ...KDF };
     this.key = await deriveKey(masterPassword, this.salt, this.kdf);
+    this.notifyKey = notifyKeyFrom(this.key);
     this.data = { entries: [], deleted: {}, folders: {}, folderDeleted: {} };
     this._write();
   }
@@ -204,7 +273,10 @@ class Vault {
     this.salt = salt;
     this.kdf = file.kdf;
     this.key = key;
+    this.notifyKey = notifyKeyFrom(key);
+    this.shared = decryptShared(this.notifyKey, file);
     this.data = data;
+    this.diskData = snapshot(data);
     this.lastHash = hash;
     this.lastSync = new Date();
     this.mergeConflictCopies();
@@ -223,7 +295,10 @@ class Vault {
     this.salt = Buffer.from(file.salt, 'base64');
     this.kdf = file.kdf;
     this.key = Buffer.from(key);
+    this.notifyKey = notifyKeyFrom(this.key);
+    this.shared = decryptShared(this.notifyKey, file);
     this.data = data;
+    this.diskData = snapshot(data);
     this.lastHash = hash;
     this.lastSync = new Date();
     this.mergeConflictCopies();
@@ -248,8 +323,12 @@ class Vault {
   lock() {
     if (this.lastHash) this.seenHash = this.lastHash;
     if (this.key) this.key.fill(0);
+    if (this.notifyKey) this.notifyKey.fill(0);
     this.key = null;
+    this.notifyKey = null;
+    this.shared = null;
     this.data = null;
+    this.diskData = null;
     this.lastHash = null;
     this.remoteChanges.clear();
   }
@@ -274,6 +353,7 @@ class Vault {
     this.salt = newSalt;
     this.kdf = newKdf;
     this.key = newKey;
+    this.notifyKey = notifyKeyFrom(newKey);
     this._write();
     return true;
   }
@@ -406,7 +486,9 @@ class Vault {
     const merged = merge(this.data, remote);
     const changed = !sameData(merged, this.data);
     if (changed) this._noteRemote(this.data, merged);
+    this.shared = newerShared(this.shared, decryptShared(this.notifyKey, read.file));
     this.data = merged;
+    this.diskData = snapshot(remote);
     this.lastHash = read.hash;
     this.lastSync = new Date();
     if (!sameData(merged, remote)) this._write(); // we had changes the other computer hasn't seen
@@ -508,6 +590,24 @@ class Vault {
     }
   }
 
+  /** The change feed to save: what's in the file now, plus what this save changes. */
+  _nextFeed() {
+    let feed = [];
+    try {
+      const onDisk = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
+      feed = decryptFeed(this.notifyKey, onDisk) || [];
+      this.shared = newerShared(this.shared, decryptShared(this.notifyKey, onDisk)); // keep another computer's newer settings
+    } catch {
+      /* no file yet */
+    }
+    const now = new Date().toISOString();
+    for (const c of diffEntries(this.diskData || { entries: [] }, this.data)) {
+      feed.push({ id: crypto.randomUUID(), at: now, login: c.id, kind: c.kind, title: c.title, changedOn: THIS_DEVICE, device: deviceId });
+    }
+    const cutoff = new Date(Date.now() - FEED_DAYS * 864e5).toISOString();
+    return feed.filter((f) => f.at >= cutoff).slice(-FEED_MAX);
+  }
+
   _write() {
     const file = {
       format: 'password-vault',
@@ -515,7 +615,9 @@ class Vault {
       kdf: this.kdf,
       salt: this.salt.toString('base64'),
       vault: encrypt(this.key, this.data),
+      feed: encrypt(this.notifyKey, this._nextFeed()),
     };
+    if (this.shared) file.shared = encrypt(this.notifyKey, this.shared);
     const text = JSON.stringify(file, null, 2);
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     // Keep the previous version as a backup on this computer only (not in the synced folder).
@@ -532,6 +634,7 @@ class Vault {
     fs.writeFileSync(tmp, text, { mode: 0o600 });
     fs.renameSync(tmp, this.filePath);
     this.lastHash = sha256(text);
+    this.diskData = snapshot(this.data);
     this.lastSync = new Date();
   }
 }
@@ -556,4 +659,4 @@ function generatePassword({ length = 20, upper = true, lower = true, digits = tr
   return chars.join('');
 }
 
-module.exports = { Vault, generatePassword, merge, diffEntries };
+module.exports = { Vault, generatePassword, merge, diffEntries, notifyKeyFrom, readFeed, readShared, setDeviceId };

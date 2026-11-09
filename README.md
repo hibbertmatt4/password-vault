@@ -60,7 +60,13 @@ Your passwords can be shared between your Mac and Windows computers through a cl
 **How it behaves**
 - **Speed:** changes show up on your other computers within a few seconds of the cloud drive syncing them, even while the app is open.
 - **Simultaneous edits:** if you edit on two computers before they sync, both sets of changes are kept. For the same login, the newest edit wins. Deleted logins stay deleted.
-- **Notifications:** when a password is added, changed or deleted on another computer, you get a notification naming it, e.g. *"Password updated on your Mac — GitHub"*. If you're looking at the app, a short message appears inside it instead. While the vault is locked or the window is closed, the app can't read your passwords, so you get one general notice, *"Your passwords were changed on another computer"*. Turn this off in **Settings → Sync between your computers**.
+- **Notifications:** when a password is added, changed or deleted on another computer, you get a system notification (Windows notification centre / Mac Notification Centre) naming it, e.g. *"Password updated on your Mac — GitHub"*.
+  - **When:** whether the window is open, closed to the tray / menu bar, or the vault is locked, like Mail. Changes made while your computer was off are reported when Password Vault starts at sign-in. A fully quit app can't notify, so keep **Settings → Background & startup** switched on.
+  - **How it can name logins while locked:** each save also stores a short, encrypted list of recent changes (login names only, never usernames or passwords). Its key is derived one-way from your vault key, and each computer keeps it sealed by the operating system after you've unlocked there once. It can't be used to open your vault.
+  - **Fallback:** if that list can't be read (e.g. the master password was just changed on another computer), you get a general *"Your passwords were changed on another computer"* instead.
+  - **Choose which ones:** **Settings → Notifications** has a switch each for new, changed and deleted passwords, and for app updates.
+  - **This computer or all of them:** under **Use these choices on**, pick **All my computers** (the default) to apply your switches to every computer that syncs this vault, or **Only this computer** to give this computer its own choices. A computer set to *Only this computer* is never changed by the others. The shared choices travel in the synced file, encrypted like the change list, so even a locked computer follows them.
+  - **Mac:** allow notifications for Password Vault in **System Settings → Notifications** if they don't appear.
 - **Master password changes:** your other computers lock and ask for the new password.
 - **Privacy:** the cloud company only ever sees the encrypted file.
 - **Stopping:** **Settings → Stop syncing** keeps a copy on that computer only.

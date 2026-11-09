@@ -58,8 +58,9 @@ function setStatus(patch) {
 }
 
 let activeNotification = null; // keep a reference so Windows doesn't drop the click handler
+let allowNotification = () => true; // Settings → Notifications → App updates
 function notify(version) {
-  if (notifiedVersion === version || !Notification.isSupported()) return;
+  if (notifiedVersion === version || !Notification.isSupported() || !allowNotification()) return;
   notifiedVersion = version;
   activeNotification = new Notification({
     title: 'Password Vault update available',
@@ -218,6 +219,7 @@ function install() {
 }
 
 module.exports = {
+  setNotificationFilter: (fn) => (allowNotification = fn),
   init,
   check,
   checkSoon,

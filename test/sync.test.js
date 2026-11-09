@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { Vault, merge } = require('../src/vault');
+const { Vault, merge, notifyKeyFrom, readFeed, readShared } = require('../src/vault');
 
 const PW = 'correct horse battery';
 const titles = (v) => v.list().map((e) => e.title).sort();
@@ -140,6 +140,29 @@ const tick = () => new Promise((r) => setTimeout(r, 5)); // make timestamps diff
     assert(seen && seen === B4.fileHash());
     A4.upsert({ title: 'While locked' });
     assert.notStrictEqual(B4.fileHash(), seen);
+    // ...and the change list (readable with the notify key, not the vault key) names it.
+    const nkey = notifyKeyFrom(A4.keyInfo().key);
+    const feed = readFeed(cloud, nkey);
+    assert(Array.isArray(feed) && feed.length > 0);
+    const last = feed[feed.length - 1];
+    assert.strictEqual(last.title, 'While locked');
+    assert.strictEqual(last.kind, 'added');
+    assert(feed.some((f) => f.kind === 'deleted' && f.title === 'Spotify'));
+    assert.strictEqual(readFeed(cloud, Buffer.alloc(32)), null, 'wrong key reads nothing');
+    assert(!fs.readFileSync(cloud, 'utf8').includes('While locked'), 'change list is encrypted');
+
+    // Shared settings: saved by one computer, readable by another (even locked), kept by later saves.
+    A4.setShared({ notify: { added: false, updated: true, deleted: true, updates: false } });
+    assert.strictEqual(readShared(cloud, nkey).notify.added, false);
+    await B4.unlock('third pw 123');
+    assert.strictEqual(B4.shared.notify.updates, false);
+    B4.upsert({ title: 'Keeps settings' });
+    assert.strictEqual(readShared(cloud, nkey).notify.added, false, 'a normal save keeps the shared settings');
+    await tick();
+    B4.setShared({ notify: { added: true, updated: true, deleted: true, updates: true } });
+    A4.syncFromDisk();
+    assert.strictEqual(A4.shared.notify.added, true, 'newest shared settings win');
+    B4.lock();
     A4.lock();
 
     // Nothing readable in the cloud file.

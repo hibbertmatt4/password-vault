@@ -250,6 +250,47 @@
           </label>
         </div>
 
+        <div id="notify-card" class="card update-card">
+          <div class="card-title">Notifications</div>
+          <p id="notify-intro" class="update-text notify-intro">Choose what Password Vault tells you about. Notifications still arrive while the window is closed or the vault is locked.</p>
+          <label class="switch-row notify-change">
+            <span>
+              <span class="update-version">New passwords</span>
+              <span class="update-text">When a password is added on another computer.</span>
+            </span>
+            <input type="checkbox" class="switch" data-notify="added" />
+          </label>
+          <label class="switch-row notify-change">
+            <span>
+              <span class="update-version">Changed passwords</span>
+              <span class="update-text">When a password is edited on another computer.</span>
+            </span>
+            <input type="checkbox" class="switch" data-notify="updated" />
+          </label>
+          <label class="switch-row notify-change">
+            <span>
+              <span class="update-version">Deleted passwords</span>
+              <span class="update-text">When a password is deleted on another computer.</span>
+            </span>
+            <input type="checkbox" class="switch" data-notify="deleted" />
+          </label>
+          <label class="switch-row">
+            <span>
+              <span class="update-version">App updates</span>
+              <span class="update-text">When a new version of Password Vault is ready to install.</span>
+            </span>
+            <input type="checkbox" class="switch" data-notify="updates" />
+          </label>
+          <div id="notify-scope-wrap" class="notify-scope hidden">
+            <span class="update-version">Use these choices on</span>
+            <div class="segmented" role="radiogroup" aria-label="Use these choices on">
+              <button type="button" role="radio" data-scope="all">All my computers</button>
+              <button type="button" role="radio" data-scope="device">Only this computer</button>
+            </div>
+            <span id="notify-scope-text" class="update-text"></span>
+          </div>
+        </div>
+
         <div id="bio-card" class="card update-card hidden">
           <div id="bio-card-title" class="card-title">Unlock with Touch ID</div>
           <div class="update-row">
@@ -279,13 +320,6 @@
           <div id="sync-how" class="sync-how hidden">
             <strong>On your other computer:</strong> install Password Vault, choose <em>“Already use Password Vault on another computer? Connect to it”</em>, pick the same cloud drive, and unlock with this master password.
           </div>
-          <label id="sync-notify-row" class="switch-row hidden">
-            <span>
-              <span class="update-version">Tell me when my other computers make changes</span>
-              <span class="update-text">Get a notification when a password is added, changed or deleted on another computer — even while this window is closed.</span>
-            </span>
-            <input type="checkbox" id="sync-notify" class="switch" />
-          </label>
         </div>
 
         <div class="card">
