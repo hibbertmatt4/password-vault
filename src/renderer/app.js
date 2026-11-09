@@ -1029,13 +1029,13 @@ function renderList() {
   for (const e of groups.get('') || []) list.appendChild(entryRow(e, false));
 }
 
-// Click or right-click on empty space in the sidebar: New folder / Add a password.
+// Right-click on empty space in the sidebar: New folder / Add a password.
+// (A left-click anywhere just closes the menu — see the mousedown handler above.)
 function sidebarMenu(e) {
   if (e.target.closest('li, button, input')) return;
   e.preventDefault();
   popupMenu(e.clientX, e.clientY, sidebarMenuItems());
 }
-$('entry-list').addEventListener('click', sidebarMenu);
 $('entry-list').addEventListener('contextmenu', sidebarMenu);
 document.querySelector('.sidebar .nav-label').addEventListener('contextmenu', sidebarMenu);
 $('new-folder-btn').addEventListener('click', () => newFolder());
