@@ -677,6 +677,31 @@ button.tb-size { font-size: 12.5px; min-width: 84px; justify-content: space-betw
 .rich img[data-size='m'] { width: 60%; }
 .rich img[data-size='l'] { width: 100%; }
 .notes-editor img:hover { outline: 2px solid var(--tan); outline-offset: 2px; }
+/* a note (no username / password / website) */
+.is-note .login-only { display: none !important; }
+.notes-editor.tall { min-height: 280px; }
+.avatar.note-glyph svg { width: 18px; height: 18px; flex: none; display: block; }
+.avatar-slot.big .avatar.note-glyph svg { width: 28px; height: 28px; }
+button.icon-pick .avatar.note-glyph svg { width: 17px; height: 17px; }
+/* hidden sections: marked while editing, a "•••• Show" chip when viewing */
+.rich mark[data-secret] { color: inherit; }
+.notes-editor [data-secret] {
+  background: rgba(197, 168, 130, 0.28); border-bottom: 2px dashed var(--tan); border-radius: 3px; padding: 0 2px;
+}
+.notes-editor [data-secret]::before { content: '\1F512\FE0E\00a0'; font-size: 0.85em; opacity: 0.7; }
+button.tb#tb-secret { padding: 0 9px 0 7px; }
+button.tb .tb-label { font-size: 12.5px; font-weight: 500; }
+.rich [data-secret].secret-hidden, .rich [data-secret].secret-open {
+  display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline;
+  padding: 1px 3px 1px 9px; border-radius: 8px; background: rgba(197, 168, 130, 0.22); border: 1px solid rgba(197, 168, 130, 0.5);
+}
+.rich [data-secret].secret-open { display: inline; padding: 1px 3px 1px 9px; background: rgba(197, 168, 130, 0.14); }
+.rich .secret-dots { letter-spacing: 0.1em; color: var(--green); user-select: none; }
+button.secret-toggle {
+  height: 22px; padding: 0 8px; margin-left: 6px; border-radius: 6px; font-size: 11.5px; font-weight: 500;
+  background: var(--green); border-color: var(--green); color: var(--cream); vertical-align: middle;
+}
+button.secret-toggle:hover { background: var(--green-light); border-color: var(--green-light); }
 .rich table { border-collapse: collapse; margin: 6px 0; min-width: 40%; max-width: 100%; }
 .rich td { border: 1px solid rgba(49, 61, 42, 0.3); padding: 5px 8px; min-width: 48px; vertical-align: top; }
 .notes-editor.rich td:focus-within { outline: 2px solid rgba(197, 168, 130, 0.6); outline-offset: -2px; }

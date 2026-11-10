@@ -231,7 +231,7 @@ function readFeed(filePath, notifyKey) {
 }
 
 // The parts of a login an edit can change (to say e.g. "GitHub: icon changed").
-const ENTRY_FIELDS = ['title', 'username', 'password', 'url', 'notes', 'notesHtml', 'attachments', 'icon', 'folder'];
+const ENTRY_FIELDS = ['kind', 'title', 'username', 'password', 'url', 'notes', 'notesHtml', 'attachments', 'icon', 'folder'];
 
 // Folders created or removed between two copies of the vault: [{ kind: added|deleted, name }].
 function diffFolders(before, after) {
@@ -473,6 +473,8 @@ class Vault {
     this._requireUnlocked();
     const now = new Date().toISOString();
     const clean = {
+      // 'login' (username + password) or 'note' (just a title and notes)
+      kind: entry.kind === 'note' ? 'note' : 'login',
       title: String(entry.title || '').trim() || 'Untitled',
       username: String(entry.username || ''),
       password: String(entry.password || ''),

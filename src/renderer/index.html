@@ -149,14 +149,14 @@
           <ul id="v-reminder-list" class="reminder-list"></ul>
         </div>
         <div class="card">
-          <div class="field"><label>Username / email</label>
+          <div class="field login-only"><label>Username / email</label>
             <div class="value-box"><span id="v-username" class="value"></span>
               <button data-copy="username" class="vb" title="Copy username">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>
                 <span>Copy</span>
               </button></div>
           </div>
-          <div class="field"><label>Password</label>
+          <div class="field login-only"><label>Password</label>
             <div class="value-box"><span id="v-password" class="value mono"></span>
               <button id="reveal-btn" class="vb" title="Show or hide the password">
                 <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -168,7 +168,7 @@
                 <span>Copy</span>
               </button></div>
           </div>
-          <div class="field" id="v-url-field"><label>Website</label>
+          <div class="field login-only" id="v-url-field"><label>Website</label>
             <div class="value-box"><span id="v-url" class="value"></span>
               <button id="open-url-btn" class="vb" title="Open in your browser">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>
@@ -189,7 +189,7 @@
       <form id="edit-pane" class="pane hidden" autocomplete="off">
         <div class="pane-head">
           <div>
-            <div class="page-eyebrow">Login details</div>
+            <div class="page-eyebrow"><span id="e-eyebrow">Login details</span></div>
             <h2 id="e-heading" class="page-title">New entry</h2>
           </div>
         </div>
@@ -211,8 +211,8 @@
               <div id="folder-menu" class="menu select-menu hidden" role="listbox"></div>
             </div>
           </div>
-          <div class="field"><label for="e-username">Username / email</label><input id="e-username" /></div>
-          <div class="field"><label for="e-password">Password</label>
+          <div class="field login-only"><label for="e-username">Username / email</label><input id="e-username" /></div>
+          <div class="field login-only"><label for="e-password">Password</label>
             <div class="row">
               <input id="e-password" type="password" class="mono" />
               <button type="button" id="e-reveal">Show</button>
@@ -220,7 +220,7 @@
             <div class="strength"><div id="strength-bar"></div></div>
             <span id="strength-label"></span>
           </div>
-          <div class="generator">
+          <div class="generator login-only">
             <div class="row">
               <label class="inline">Length <input id="g-length" type="range" min="8" max="64" value="20" /> <span id="g-length-val">20</span></label>
               <button type="button" id="g-btn">Generate new</button>
@@ -232,7 +232,7 @@
               <label class="inline"><input type="checkbox" id="g-symbols" checked /> !@#</label>
             </div>
           </div>
-          <div class="field"><label for="e-url">Website</label><input id="e-url" placeholder="example.com" /></div>
+          <div class="field login-only"><label for="e-url">Website</label><input id="e-url" placeholder="example.com" /></div>
           <div class="field"><label id="e-notes-label">Notes</label>
             <div class="notes-box">
               <div id="notes-toolbar" class="notes-toolbar" role="toolbar" aria-label="Formatting">
@@ -255,6 +255,8 @@
                 <span class="tb-sep"></span>
                 <button type="button" class="tb" id="tb-picture" title="Insert a picture"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5.5-5.5 4 4 2.5-2.5 4.5 4.5"/></svg></button>
                 <button type="button" class="tb" data-menu="table" title="Table"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10M15 9.5v10"/></svg></button>
+                <button type="button" class="tb" id="tb-secret" title="Hide the selected text (it shows as •••• with a Show button, like a password)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg><span class="tb-label">Hide</span></button>
+                <span class="tb-sep"></span>
                 <button type="button" class="tb" data-cmd="removeFormat" title="Clear formatting"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5h12M12 5l-3 14"/><path d="m15 14 5 5M20 14l-5 5"/></svg></button>
               </div>
               <div id="e-notes" class="notes-editor rich" contenteditable="true" spellcheck="true" data-spell="on" role="textbox" aria-multiline="true" aria-labelledby="e-notes-label"></div>
@@ -324,6 +326,13 @@
               <span class="update-text" id="bg-login-text">Starts quietly in the tray, so you get update notifications even if you don't open it.</span>
             </span>
             <input type="checkbox" id="bg-login" class="switch" />
+          </label>
+          <label class="switch-row">
+            <span>
+              <span class="update-version">Install updates automatically</span>
+              <span class="update-text">A new version downloads in the background and installs by itself once the window is closed (the vault is locked then), so you never have to run an installer. Password Vault opens again quietly in the <span id="bg-auto-where">tray</span>.</span>
+            </span>
+            <input type="checkbox" id="bg-auto" class="switch" />
           </label>
         </div>
 

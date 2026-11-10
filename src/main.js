@@ -313,13 +313,37 @@ let tray = null;
 let windowCreatedBefore = false;
 let quitting = false; // true once the user really quits (tray "Quit", Cmd+Q, installing an update)
 // Started by "open at sign-in": stay hidden in the tray until the user opens it.
-const startedHidden =
+let startedHidden =
   process.argv.includes('--hidden') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin);
 
 const prefs = () => ({
   keepRunning: settings.get('keepRunning') !== false, // on unless turned off
   openAtLogin: settings.get('openAtLogin') !== false,
+  autoInstall: settings.get('autoInstall') !== false, // install a downloaded update while the window is closed
 });
+
+// Close the window into the tray / menu bar: the vault locks, the app keeps running (updates, reminders).
+function hideToTray() {
+  if (win && !win.isDestroyed()) win.hide();
+  lockVault('closed');
+  firstHideHint();
+}
+
+// Quit from the app's own menu. On a Mac, ⌘Q (and Vault ▸ Quit) behave like closing the window, so
+// Password Vault stays in the menu bar and keeps checking for updates; the menu bar icon's Quit really quits.
+function quitFromMenu() {
+  if (process.platform === 'darwin' && tray && prefs().keepRunning) return hideToTray();
+  quitting = true;
+  app.quit();
+}
+
+// A downloaded update installs by itself once nobody is using the app (window closed into the tray, so the vault
+// is locked and nothing can be lost), then the app starts again, still in the tray.
+function maybeAutoInstall() {
+  if (quitting || updater.getStatus().state !== 'downloaded' || !prefs().autoInstall) return;
+  if (win && !win.isDestroyed() && (win.isVisible() || win.isMinimized())) return;
+  updater.install({ auto: true });
+}
 
 function showWindow() {
   if (!win || win.isDestroyed()) createWindow();
@@ -451,10 +475,9 @@ function createWindow() {
   win.on('close', (e) => {
     if (quitting || !prefs().keepRunning) return;
     e.preventDefault();
-    win.hide();
-    lockVault('closed');
-    firstHideHint();
+    hideToTray();
   });
+  win.on('hide', () => setTimeout(maybeAutoInstall, 1500));
   win.on('show', () => {
     win.webContents.send('window:shown');
     updater.checkSoon(2000);
@@ -512,7 +535,24 @@ function lockVault(reason) {
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const template = [
-    ...(isMac ? [{ role: 'appMenu' }] : []),
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { label: 'Quit Password Vault', accelerator: 'Cmd+Q', click: quitFromMenu },
+            ],
+          },
+        ]
+      : []),
     {
       label: 'Vault',
       submenu: [
@@ -855,7 +895,7 @@ function registerIpc() {
       case 'minimize': return w.minimize();
       case 'maximize': return w.isMaximized() ? w.unmaximize() : w.maximize();
       case 'close': return w.close();
-      case 'quit': return app.quit();
+      case 'quit': return quitFromMenu();
     }
   });
   // The page can't reliably tell whether its window is hidden (e.g. started in the tray), so ask here.
@@ -871,9 +911,10 @@ function registerIpc() {
   // Settings: keep running in the tray / open at sign-in.
   ipcMain.handle('prefs:get', () => ({ ...prefs(), platform: process.platform, installed: app.isPackaged }));
   ipcMain.handle('prefs:set', (_e, key, value) => {
-    if (!['keepRunning', 'openAtLogin'].includes(key)) return prefs();
+    if (!['keepRunning', 'openAtLogin', 'autoInstall'].includes(key)) return prefs();
     settings.set(key, !!value);
     applyBackgroundPrefs();
+    maybeAutoInstall();
     return { ...prefs(), platform: process.platform, installed: app.isPackaged };
   });
 
@@ -946,6 +987,15 @@ if (!app.requestSingleInstanceLock()) {
       settings.set('notify', { added: false, updated: false, deleted: false, updates: true });
     }
     settings.set('notifyChanges', null);
+    // After an update installed itself in the background, start quietly in the tray again.
+    const relaunchedAt = settings.get('relaunchHiddenAt');
+    if (relaunchedAt) {
+      if (Date.now() - relaunchedAt < 10 * 60 * 1000) startedHidden = true;
+      settings.set('relaunchHiddenAt', null);
+      if (Date.now() - relaunchedAt < 10 * 60 * 1000 && Notification.isSupported() && notifyPrefs().updates) {
+        new Notification({ title: 'Password Vault was updated', body: `It updated itself in the background and is now version ${app.getVersion()}.` }).show();
+      }
+    }
     updater.setNotificationFilter(() => notifyPrefs().updates);
     openVaultAt(settings.get('vaultPath') || localPath);
     loadNotifyKey();
@@ -957,7 +1007,15 @@ if (!app.requestSingleInstanceLock()) {
     updater.init((status) => {
       if (win && !win.isDestroyed()) win.webContents.send('update:status', status);
     });
-    updater.onStatus(() => rebuildTrayMenu());
+    updater.setInstallHooks((auto) => {
+      quitting = true; // let every window really close
+      if (auto) settings.set('relaunchHiddenAt', Date.now()); // …and start again quietly in the tray afterwards
+    });
+    updater.setAutoInstallCheck(() => prefs().autoInstall && !(win && !win.isDestroyed() && (win.isVisible() || win.isMinimized())));
+    updater.onStatus((s) => {
+      rebuildTrayMenu();
+      if (s.state === 'downloaded') setTimeout(maybeAutoInstall, 1000);
+    });
     applyBackgroundPrefs();
     if (startedHidden && !tray) showWindow(); // never end up running with no window and no tray icon
     // Reminders: fire any that came due while the app wasn't running, then keep a timer for the next one.

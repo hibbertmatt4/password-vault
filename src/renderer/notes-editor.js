@@ -48,6 +48,7 @@
     SPAN: 'span', FONT: 'font', UL: 'ul', OL: 'ol', LI: 'li', TABLE: 'table', THEAD: 'tbody', TBODY: 'tbody', TFOOT: 'tbody',
     TR: 'tr', TD: 'td', TH: 'td', H1: 'p', H2: 'p', H3: 'p', H4: 'p', H5: 'p', H6: 'p', BLOCKQUOTE: 'div', PRE: 'div',
     SUB: 'sub', SUP: 'sup', IMG: 'img',
+    MARK: 'mark', // only as a hidden section (data-secret); a plain <mark> is just its contents
   };
   // dropped with everything inside them
   const DROP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'IFRAME', 'FRAME', 'OBJECT', 'EMBED', 'HEAD', 'TITLE', 'META', 'LINK', 'SVG', 'MATH', 'NOSCRIPT', 'VIDEO', 'AUDIO', 'CANVAS', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'FORM', 'XML']);
@@ -95,7 +96,12 @@
           }
           continue;
         }
+        if (tag === 'mark' && !n.hasAttribute('data-secret')) {
+          walk(n, to, depth + 1);
+          continue;
+        }
         const el = document.createElement(tag);
+        if (tag === 'mark') el.setAttribute('data-secret', '1'); // a hidden section (shown with a Show button)
         const style = styleOf(n);
         let inner = el;
         const wrap = (t) => {
@@ -213,7 +219,7 @@
   function hasFormatting(html) {
     const root = document.createElement('div');
     root.innerHTML = sanitize(html);
-    return !!root.querySelector('b,i,u,s,sub,sup,font,span,ul,ol,table,img,[style]');
+    return !!root.querySelector('b,i,u,s,sub,sup,font,span,ul,ol,table,img,mark,[style]');
   }
 
   /** Plain-text notes as editor HTML (one line per line). */
@@ -282,5 +288,48 @@
     if (!table.rows.length) table.remove();
   }
 
-  window.RichNotes = { SIZES, HIGHLIGHTS, COLOURS, sanitize, toText, hasFormatting, fromPlain, richFor, tableHtml, addRow, addColumn, deleteRow, deleteColumn };
+  // ---------- hidden sections ----------
+  /** The HTML for a hidden section holding the selected content (several lines become one section with line breaks). */
+  function secretHtml(fragmentHtml) {
+    const html = sanitize(fragmentHtml);
+    const probe = document.createElement('div');
+    probe.innerHTML = html;
+    if (!probe.textContent.trim()) return null;
+    for (const s of probe.querySelectorAll('[data-secret]')) s.replaceWith(...s.childNodes); // no sections inside sections
+    let inner = probe.innerHTML;
+    if (probe.querySelector('div,p,li,td,table,ul,ol')) {
+      const t = document.createElement('div');
+      t.textContent = toText(inner);
+      inner = t.innerHTML.replace(/\n/g, '<br>');
+    }
+    return `<mark data-secret="1">${inner}</mark>`;
+  }
+
+  /**
+   * Turn the hidden sections of notes shown on screen into "•••• Show" chips. While hidden, the text isn't
+   * in the page at all; Show puts it back, Hide takes it away again.
+   */
+  function maskSecrets(root) {
+    for (const s of [...root.querySelectorAll('[data-secret]')]) {
+      const real = s.innerHTML;
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'secret-toggle';
+      const body = document.createElement('span');
+      const render = (shown) => {
+        s.classList.toggle('secret-open', shown);
+        s.classList.toggle('secret-hidden', !shown);
+        if (shown) body.innerHTML = real; // already cleaned
+        else body.textContent = '••••••••';
+        body.className = shown ? 'secret-body' : 'secret-dots';
+        toggle.textContent = shown ? 'Hide' : 'Show';
+        toggle.setAttribute('aria-label', shown ? 'Hide this part of the notes' : 'Show the hidden part of the notes');
+        s.replaceChildren(body, toggle);
+      };
+      toggle.addEventListener('click', () => render(!s.classList.contains('secret-open')));
+      render(false);
+    }
+  }
+
+  window.RichNotes = { secretHtml, maskSecrets, SIZES, HIGHLIGHTS, COLOURS, sanitize, toText, hasFormatting, fromPlain, richFor, tableHtml, addRow, addColumn, deleteRow, deleteColumn };
 })();

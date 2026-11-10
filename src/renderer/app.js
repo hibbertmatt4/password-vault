@@ -568,6 +568,8 @@ async function renderBackground(p) {
     ? `Starts quietly in the ${mac ? 'menu bar' : 'tray'}, so you get update notifications even if you don't open it.`
     : 'Only available in the installed app.';
   $('bg-keep').checked = p.keepRunning;
+  $('bg-auto').checked = p.autoInstall;
+  $('bg-auto-where').textContent = mac ? 'menu bar' : 'tray';
   $('bg-login').checked = p.keepRunning && p.openAtLogin;
   // Starting at sign-in only makes sense while it can stay running in the background.
   $('bg-login').disabled = !p.keepRunning || !p.installed;
@@ -577,6 +579,11 @@ $('bg-keep').addEventListener('change', async () => {
   const p = await window.api.setPref('keepRunning', $('bg-keep').checked);
   renderBackground(p);
   toast(p.keepRunning ? 'Password Vault will keep running when you close the window' : 'Closing the window will quit Password Vault');
+});
+$('bg-auto').addEventListener('change', async () => {
+  const p = await window.api.setPref('autoInstall', $('bg-auto').checked);
+  renderBackground(p);
+  toast(p.autoInstall ? 'Updates will install by themselves' : 'You’ll choose when to install updates');
 });
 $('bg-login').addEventListener('change', async () => {
   const p = await window.api.setPref('openAtLogin', $('bg-login').checked);
@@ -792,6 +799,14 @@ function avatarFor(entry, icon = entry.icon) {
     div.appendChild(img);
     return div;
   }
+  if (entry.kind === 'note' && (!icon || icon.type !== 'letter')) {
+    // a note with no chosen icon gets a little page
+    const div = document.createElement('div');
+    div.className = 'avatar note-glyph';
+    div.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3.5h7.5L19 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z"/><path d="M14.5 3.5V8H19M9 12.5h6M9 16h6"/></svg>';
+    return div;
+  }
   if (!icon || icon.type !== 'letter') {
     const auto = autoBrand(entry);
     if (auto) return brandTile(auto);
@@ -824,6 +839,7 @@ const ICON = {
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>',
   key: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M16 6l3 3M14 8l2 2"/></svg>',
   plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  note: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h7.5L19 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z"/><path d="M14.5 3.5V8H19M9 12.5h6M9 16h6"/></svg>',
   pen: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16Z"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   open: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
@@ -1089,6 +1105,22 @@ function addPassword(folder) {
   if (!$('e-password').value) generateInto();
 }
 
+function addNote(folder) {
+  closeMenu();
+  selectedId = null;
+  renderList();
+  openEditor(null, 'note');
+  setEditorFolder(folder || '');
+}
+
+// "+ Add" and a folder's "+": choose a login (username and password) or a note.
+function addMenu(x, y, folder) {
+  popupMenu(x, y, [
+    { text: 'Login (username & password)', icon: ICON.key, run: () => addPassword(folder) },
+    { text: 'Note (just text)', icon: ICON.note, run: () => addNote(folder) },
+  ]);
+}
+
 function folderMenuItems(name) {
   const collapsed = collapsedFolders.has(name);
   const leaf = leafName(name);
@@ -1099,6 +1131,7 @@ function folderMenuItems(name) {
     { text: 'Delete folder…', icon: ICON.trash, danger: true, run: () => deleteFolder(name) },
     '-',
     { text: `Add a password to “${leaf}”`, icon: ICON.plus, run: () => addPassword(name) },
+    { text: `Add a note to “${leaf}”`, icon: ICON.note, run: () => addNote(name) },
     { text: `New folder inside “${leaf}”…`, icon: ICON.folderPlus, run: () => newFolder(null, name) },
     { text: collapsed ? 'Open folder' : 'Close folder', icon: ICON.open, run: () => toggleFolder(name) },
   ];
@@ -1109,7 +1142,7 @@ function folderMenuItems(name) {
 function entryMenuItems(entry) {
   const items = [
     { label: entry.title },
-    { text: 'Open', icon: ICON.key, run: () => selectEntry(entry.id) },
+    { text: 'Open', icon: entry.kind === 'note' ? ICON.note : ICON.key, run: () => selectEntry(entry.id) },
     { text: 'Edit', icon: ICON.pen, run: () => editLogin(entry) },
     { text: 'Remind me…', icon: ICON.bell, run: () => openReminder(entry) },
     { text: 'Delete…', icon: ICON.trash, danger: true, run: () => deleteLogin(entry) },
@@ -1127,6 +1160,7 @@ function sidebarMenuItems() {
   return [
     { text: 'New folder…', icon: ICON.folderPlus, run: () => newFolder() },
     { text: 'Add a password', icon: ICON.plus, run: () => addPassword('') },
+    { text: 'Add a note', icon: ICON.note, run: () => addNote('') },
   ];
 }
 
@@ -1192,7 +1226,7 @@ function entryRow(entry, inFolder) {
   t.textContent = entry.title;
   const u = document.createElement('div');
   u.className = 'u';
-  u.textContent = entry.username || entry.url || '';
+  u.textContent = entry.kind === 'note' ? 'Note' : entry.username || entry.url || '';
   meta.append(t, u);
   // Quick Edit / Delete buttons, shown on hover and on the open login.
   const actions = Object.assign(document.createElement('span'), { className: 'row-actions' });
@@ -1278,10 +1312,11 @@ function folderHeader(name, count, collapsed) {
     '<svg class="folder-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>'
   );
   const label = Object.assign(document.createElement('span'), { className: 'folder-name', textContent: leafName(name) });
-  const add = Object.assign(document.createElement('span'), { className: 'add-here', textContent: '+', title: `Add a password to “${leafName(name)}”` });
+  const add = Object.assign(document.createElement('span'), { className: 'add-here', textContent: '+', title: `Add a password or note to “${leafName(name)}”` });
   add.addEventListener('click', (e) => {
     e.stopPropagation();
-    addPassword(name);
+    const r = add.getBoundingClientRect();
+    addMenu(r.left, r.bottom + 4, name);
   });
   const c = Object.assign(document.createElement('span'), { className: 'count', textContent: count });
   const actions = Object.assign(document.createElement('span'), { className: 'row-actions' });
@@ -1406,10 +1441,12 @@ function selectEntry(id) {
   renderList();
   const e = current();
   if (!e) return showPane(null);
+  const isNote = e.kind === 'note';
+  $('view-pane').classList.toggle('is-note', isNote);
   $('v-title').textContent = e.title;
   $('v-icon').replaceChildren(avatarFor(e));
   const eyebrow = $('v-eyebrow');
-  eyebrow.replaceChildren(document.createTextNode('Login'));
+  eyebrow.replaceChildren(document.createTextNode(isNote ? 'Note' : 'Login'));
   if (e.folder) {
     const chip = document.createElement('span');
     chip.className = 'folder-chip';
@@ -1426,8 +1463,10 @@ function selectEntry(id) {
   const rich = RichNotes.richFor(e);
   const notesView = $('v-notes');
   notesView.classList.toggle('rich', !!rich);
-  if (rich) notesView.innerHTML = rich; // already cleaned: only formatting tags survive
-  else notesView.textContent = e.notes;
+  if (rich) {
+    notesView.innerHTML = rich; // already cleaned: only formatting tags survive
+    RichNotes.maskSecrets(notesView); // hidden sections show as •••• until you press Show
+  } else notesView.textContent = e.notes;
   $('v-notes-field').classList.toggle('hidden', !e.notes && !rich);
   renderViewFiles(e);
   $('v-meta').textContent = `Last updated ${new Date(e.updatedAt).toLocaleString()}`;
@@ -1478,9 +1517,17 @@ $('open-url-btn').addEventListener('click', () => {
 $('search').addEventListener('input', renderList);
 
 // ---------- add / edit ----------
-function openEditor(entry) {
+let editingKind = 'login'; // 'login' (username + password) or 'note' (just a title and notes)
+function openEditor(entry, kind) {
   editingId = entry ? entry.id : null;
-  $('e-heading').textContent = entry ? 'Edit entry' : 'New entry';
+  editingKind = (entry ? entry.kind : kind) === 'note' ? 'note' : 'login';
+  const isNote = editingKind === 'note';
+  $('edit-pane').classList.toggle('is-note', isNote);
+  $('e-notes').classList.toggle('tall', isNote);
+  $('e-eyebrow').textContent = isNote ? 'Note details' : 'Login details';
+  $('e-title').placeholder = isNote ? 'e.g. Wi-Fi details' : 'e.g. Gmail';
+  $('e-notes-label').textContent = isNote ? 'Note' : 'Notes';
+  $('e-heading').textContent = entry ? (isNote ? 'Edit note' : 'Edit entry') : isNote ? 'New note' : 'New entry';
   $('e-title').value = entry ? entry.title : '';
   $('e-username').value = entry ? entry.username : '';
   $('e-password').value = entry ? entry.password : '';
@@ -1552,6 +1599,10 @@ function updateToolbar() {
   if (f && notesEd.contains(f)) size = f.getAttribute('size');
   const s = RichNotes.SIZES.find((x) => x[1] === size);
   $('tb-size-label').textContent = s ? s[0] : size > '3' ? 'Huge' : 'Small';
+  // the Hide button turns into "Show text" while the cursor is inside a hidden section
+  const inSecret = inNotes && !!secretAround();
+  $('tb-secret').classList.toggle('active', inSecret);
+  $('tb-secret').querySelector('.tb-label').textContent = inSecret ? 'Unhide' : 'Hide';
 }
 document.addEventListener('selectionchange', () => {
   if (document.activeElement !== notesEd) return;
@@ -1778,6 +1829,54 @@ $('e-picture-input').addEventListener('change', () => {
   $('e-picture-input').value = '';
   if (files.length) insertPictures(files);
 });
+// ---------- hidden sections in notes ----------
+// Select text and press Hide: it becomes a section that shows as •••• (with a Show button) when the login is
+// opened, like a password. Put the cursor in a hidden section and press the button again to un-hide it.
+const secretAround = () => {
+  const r = document.activeElement === notesEd && getSelection().rangeCount ? getSelection().getRangeAt(0) : notesRange;
+  const el = r && nodeEl(r.startContainer);
+  const s = el && el.closest('[data-secret]');
+  return s && notesEd.contains(s) ? s : null;
+};
+$('tb-secret').addEventListener('click', () => {
+  const inside = secretAround();
+  focusNotes();
+  const sel = getSelection();
+  if (!sel.rangeCount) return;
+  if (inside) {
+    // un-hide: replace the section with what's inside it
+    const kids = [...inside.childNodes];
+    inside.replaceWith(...kids);
+    const r = document.createRange();
+    r.setStartAfter(kids[kids.length - 1] || inside.parentNode);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    notesEd.dispatchEvent(new Event('input'));
+  } else {
+    const range = sel.getRangeAt(0);
+    if (range.collapsed) return toast('Select the text you want to hide first');
+    const box = document.createElement('div');
+    box.appendChild(range.cloneContents());
+    const html = RichNotes.secretHtml(box.innerHTML);
+    if (!html) return toast('Select the text you want to hide first');
+    // Done on the page directly: the browser's own insert would unwrap a plain one-line selection again.
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const mark = tpl.content.firstChild;
+    range.deleteContents();
+    range.insertNode(mark);
+    const after = document.createRange();
+    after.setStartAfter(mark);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+    notesEd.dispatchEvent(new Event('input'));
+  }
+  rememberNotesSelection();
+  updateToolbar();
+});
+
 // Click a picture in the notes: change its size, save it, or remove it.
 notesEd.addEventListener('click', (e) => {
   const img = e.target.closest('img');
@@ -2004,7 +2103,7 @@ $('ctx-menu').addEventListener('keydown', (e) => {
 
 // ---------- icon picker ----------
 let editingIcon = null; // icon chosen in the editor (null = automatic)
-const editorEntry = () => ({ title: $('e-title').value, url: $('e-url').value });
+const editorEntry = () => ({ kind: editingKind, title: $('e-title').value, url: $('e-url').value });
 function updateEditorIcon() {
   $('e-icon').replaceChildren(avatarFor(editorEntry(), editingIcon));
 }
@@ -2125,11 +2224,9 @@ $('icon-modal').addEventListener('mousedown', (e) => {
   if (e.target === $('icon-modal')) hide($('icon-modal'));
 });
 
-$('add-btn').addEventListener('click', async () => {
-  selectedId = null;
-  renderList();
-  openEditor(null);
-  if (!$('e-password').value) await generateInto();
+$('add-btn').addEventListener('click', () => {
+  const r = $('add-btn').getBoundingClientRect();
+  addMenu(r.left, r.bottom + 4, '');
 });
 $('edit-btn').addEventListener('click', () => openEditor(current()));
 $('cancel-btn').addEventListener('click', () => (selectedId ? selectEntry(selectedId) : showPane(null)));
@@ -2174,12 +2271,14 @@ $('edit-pane').addEventListener('submit', async (e) => {
   }
   // Notes: plain text always (search, older versions of the app), plus the cleaned formatting if there is any.
   const notesHtml = RichNotes.sanitize($('e-notes').innerHTML);
+  const isNote = editingKind === 'note';
   const saved = await window.api.save({
     id: editingId,
+    kind: editingKind,
     title: $('e-title').value,
-    username: $('e-username').value,
-    password: $('e-password').value,
-    url: $('e-url').value,
+    username: isNote ? '' : $('e-username').value,
+    password: isNote ? '' : $('e-password').value,
+    url: isNote ? '' : $('e-url').value,
     notes: RichNotes.toText(notesHtml),
     notesHtml: RichNotes.hasFormatting(notesHtml) ? notesHtml : '',
     // existing files are sent by id only (their contents stay in the vault); new ones carry their contents
@@ -2799,7 +2898,7 @@ function renderUpdate() {
       break;
     case 'available':
       text.textContent = `Version ${s.version} is available.`;
-      action.textContent = s.isMac ? 'Download' : 'Update now';
+      action.textContent = s.manual ? 'Download' : 'Update now';
       show(action);
       break;
     case 'downloading':
@@ -2831,10 +2930,11 @@ function renderUpdate() {
   $('banner-later').textContent = 'Later';
   if (s.state === 'available') {
     $('banner-title').textContent = 'Update available';
-    $('banner-text').textContent = s.isMac
-      ? `Version ${s.version} is out (you have ${s.currentVersion}). Download it, then drag it into Applications.`
+    // "manual": this copy can't replace itself (e.g. a Mac app run from the disk image), so it links to the download
+    $('banner-text').textContent = s.manual
+      ? `Version ${s.version} is out (you have ${s.currentVersion}). Download it, then drag it into Applications. (Once Password Vault is in your Applications folder it can update itself.)`
       : `Version ${s.version} is ready (you have ${s.currentVersion}).`;
-    $('banner-action').textContent = s.isMac ? 'Download' : 'Update now';
+    $('banner-action').textContent = s.manual ? 'Download' : 'Update now';
   } else if (s.state === 'downloading') {
     $('banner-title').textContent = 'Downloading update…';
     $('banner-text').textContent = `${s.percent || 0}% — you can keep using the app.`;
@@ -2844,7 +2944,7 @@ function renderUpdate() {
     $('banner-later').textContent = 'Hide';
   } else if (s.state === 'downloaded') {
     $('banner-title').textContent = 'Ready to install';
-    $('banner-text').textContent = `Restart to finish updating to version ${s.version}. Your passwords stay safe.`;
+    $('banner-text').textContent = `Restart to finish updating to version ${s.version}. Your passwords stay safe. (If you close the window instead, it installs by itself.)`;
     $('banner-action').textContent = 'Restart & update';
   } else {
     $('banner-title').textContent = 'Update failed';

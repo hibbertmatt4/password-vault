@@ -16,6 +16,9 @@ An offline, encrypted password manager for Windows and Mac.
   - **Shortcuts:** Ctrl/Cmd+B, I, U and Z work as usual. Ctrl/Cmd+Shift+X is strikethrough.
   - **Pasting:** text pasted from Word, Outlook or a web page keeps its bold, italics, underline, colours, sizes, lists and tables. Pictures, links and anything else are removed.
   - **Older versions:** the formatting syncs with everything else. A computer still on an older version shows the notes as plain text. If it edits them, the plain text wins.
+- **Hiding part of a note:** select text in the notes and click **Hide** in the toolbar. When you open the login, that part shows as •••••••• with a **Show** button (and **Hide** to cover it again), like a password, so sensitive details aren't on screen as soon as you click the login. While hidden, the text isn't even in the page. To un-hide it for good, put the cursor inside it while editing and click **Unhide**.
+  - **Older versions:** a computer on an older version shows the whole note without hiding anything.
+- **Notes (no password):** click **+ Add** and choose **Note** (also in a folder's **+** and right-click menus, and when right-clicking empty space in the sidebar). A note is just a name, a folder, and notes (formatting, hidden parts, pictures, files and reminders all work). It has no username, password or website.
 - **Pictures in notes:**
   - **Adding them:** click the picture button in the notes toolbar, paste one (e.g. a screenshot), or drop picture files onto the notes.
   - **Size:** pictures are made smaller (at most 1600 pixels across) so the vault stays quick to sync.
@@ -137,15 +140,16 @@ If you do have a Mac: install Node.js, then run `npm install` and `npm run dist:
 ## Running in the background
 - **Closing the window:** Password Vault **locks** and keeps running in the **system tray** (Windows, by the clock) or the **menu bar** (Mac). It keeps checking for updates and can notify you.
 - **Opening it again:** click the tray icon (Windows) or choose **Open Password Vault** from its menu.
-- **Quitting:** choose **Quit Password Vault** from the same menu.
+- **Quitting:** choose **Quit Password Vault** from the same menu. On a Mac, **⌘Q** and **Vault → Quit** do the same as closing the window (Password Vault stays in the menu bar, locked, so updates and reminders keep working); use the menu bar icon's **Quit Password Vault** (or Dock → Quit) to really quit.
 - **Starting at sign-in:** by default it also starts quietly in the tray when you sign in to your computer, so update notifications arrive even if you don't open it.
 - **Turning these off:** **Settings → Background & startup**.
 
 ## Updates
 The app checks for new versions when it starts, every 30 minutes, when your computer wakes up, and when you open the window. When one is found:
-- **Windows:** the update downloads by itself in the background, even with the window closed. You then get a notification, *"Password Vault update ready"*. Click it, then **Restart & update** (or it installs next time you quit).
-- **Mac:** you get a notification straight away. Click **Download** to get the new version, then drag it into Applications. Unsigned Mac apps can't replace themselves.
-- Either way, there's a banner in the app and a dot on **Settings**. Update notifications can be turned off in **Settings → Notifications → App updates**.
+- **Both Windows and Mac:** the update downloads by itself in the background, even with the window closed. As soon as the window is closed into the tray / menu bar (so the vault is locked and nothing can be lost) it installs silently and Password Vault starts again quietly, with a notification *"Password Vault was updated"*. You never run an installer or drag anything. If the window is open, the banner offers **Restart & update**, or just close the window.
+- **Turning it off:** **Settings → Background & startup → Install updates automatically**. Then you choose when with **Restart & update**.
+- **Mac, how it works:** Apple only lets *signed* apps use the standard updater, and this app isn't signed, so Password Vault does it itself. It downloads the release, checks it against the fingerprint (SHA-512) published with it, unpacks it, and a tiny helper swaps the new app in once the old one has quit. This needs Password Vault to be in your **Applications** folder (not running from the disk image). If it can't update itself it shows **Download** instead, as before.
+- There's a banner in the app and a dot on **Settings**. Update notifications can be turned off in **Settings → Notifications → App updates**.
 
 You can also go to **Settings → Check for updates**, or use the **Vault → Check for Updates…** menu.
 
