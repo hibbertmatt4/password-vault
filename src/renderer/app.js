@@ -1325,14 +1325,17 @@ function folderHeader(name, count, collapsed) {
     rowButton(ICON.trash, `Delete “${leafName(name)}”`, () => deleteFolder(name), true)
   );
   li.append(label, add, c, actions);
-  // Click (or right-click) the folder for its menu: add a password here, open/close, rename, delete.
-  const menu = (e) => {
+  // Left-click anywhere on the folder opens / closes it. Right-click for its menu: add a password or note here,
+  // new folder inside, rename, move, delete (the + and the pencil / bin on hover do those too).
+  li.addEventListener('click', () => {
+    closeMenu();
+    toggleFolder(name);
+  });
+  li.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     e.stopPropagation();
     popupMenu(e.clientX, e.clientY, folderMenuItems(name));
-  };
-  li.addEventListener('click', menu);
-  li.addEventListener('contextmenu', menu);
+  });
   return li;
 }
 
@@ -2642,7 +2645,7 @@ function openReminder(entry, forEditor = false) {
   reminderFor = entry || null;
   reminderForEditor = forEditor;
   $('reminder-title').textContent = entry && entry.title ? `Remind me about “${entry.title}”` : forEditor ? 'Remind me about this login' : 'New reminder';
-  $('reminder-sub').textContent = forEditor
+  $('reminder-sub').textContent = forEditor && !editingId
     ? 'Saved when you save this login. You’ll get a notification with this message, even if the window is closed.'
     : 'You’ll get a notification with this message, even if the window is closed.';
   setReminderRepeat('');
@@ -2688,8 +2691,9 @@ $('reminder-form').addEventListener('submit', async (e) => {
   if (!text) return (err.textContent = 'Type what you want to be reminded about.');
   if (!at) return (err.textContent = reminderWhen === 'timer' ? 'Choose how long, from 1 to 999.' : 'Choose a date and time.');
   if (at <= Date.now()) return (err.textContent = 'Choose a time in the future.');
-  if (reminderForEditor) {
-    // Inside the login editor: keep it until the login is saved (a new login has no id yet).
+  if (reminderForEditor && !editingId) {
+    // Inside the editor of a brand-new login: keep it until the login is saved (it has no id yet).
+    // (For a login that already exists, the reminder is created straight away, like on the login's page.)
     editorReminders.pending.push({ id: 'new-' + Math.random().toString(36).slice(2), text, at: at.toISOString(), repeat: reminderRepeat || null });
     closeReminder();
     renderEditorReminders();
@@ -2785,7 +2789,7 @@ function resetEditorReminders() {
 function renderEditorReminders() {
   const existing = editingId ? reminderCache.upcoming.filter((r) => r.loginId === editingId && !editorReminders.removed.has(r.id)) : [];
   const items = [
-    ...existing.map((r) => reminderItem(r, { onButton: (x) => (editorReminders.removed.add(x.id), renderEditorReminders()) })),
+    ...existing.map((r) => reminderItem(r, { onButton: cancelReminder })),
     ...editorReminders.pending.map((r) =>
       reminderItem(r, {
         note: `${whenText(r.at)} · new`,

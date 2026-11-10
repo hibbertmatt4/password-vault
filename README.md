@@ -33,7 +33,7 @@ An offline, encrypted password manager for Windows and Mac.
 - **Spell check** in the Notes box (and in reminders): misspelled words are underlined; right-click one for suggestions or **Add to dictionary**. It uses your computer's own spell checker, so nothing is sent anywhere. Names, usernames, websites and passwords are never spell-checked.
 - **Reminders:** get a notification with your own message, e.g. *"Delete my old Netflix password"*.
   - **Making one:**
-    - While adding or editing a login, use **Add a reminder** under Notes. It's saved when you save the login.
+    - While adding or editing a login, use **Add a reminder** under Notes. For a login that already exists it's set straight away and shows in **Settings → Reminders** at once; for a brand-new login it's set when you save it.
     - Or open a login and click **Remind me**.
     - Or go to **Settings → Reminders → New reminder** for one that isn't about a login.
   - **When:**
@@ -52,6 +52,7 @@ An offline, encrypted password manager for Windows and Mac.
     - Click a reminder there to open its login.
     - Each login's page and editor also show its own reminders.
   - **Cancelling:** use **Cancel** on any reminder. Deleting a login also cancels its reminders.
+  - **Updates and your reminders:** they live in their own file on your computer (`reminders.json` in Password Vault's data folder), which updating never touches. It's written safely (to a temporary file first) with a backup copy beside it; if the file is ever damaged the backup is used, and the damaged one is kept aside rather than overwritten. A one-time reminder that has gone off moves from *Upcoming* to *Sent recently* (for 60 days).
   - **Where they're kept:** on that computer only, sealed by the operating system. They don't sync.
 - Built-in strong password generator and a strength meter.
 - Copied passwords are **wiped from the clipboard after 30 seconds**.
@@ -64,9 +65,10 @@ An offline, encrypted password manager for Windows and Mac.
 ## Folders and icons
 - **Folders:**
   - **Make one:** click **New folder** next to *Your logins*, or right-click any empty space in the sidebar.
-  - **Folders inside folders:** click a folder and choose **New folder inside**, or drag a folder onto another folder. Drag it to empty space (or choose **Move out of**) to bring it back up a level. Folders can go up to 8 levels deep.
+  - **Folders inside folders:** right-click a folder and choose **New folder inside**, or drag a folder onto another folder. Drag it to empty space (or choose **Move out of**) to bring it back up a level. Folders can go up to 8 levels deep.
   - **Fill it:** drag logins onto a folder, or out of it to empty space. You can also right-click a login and choose **Move to folder**, or pick a folder in the login's **Folder** dropdown.
-  - **Folder menu:** click a folder for **Add a password to this folder**, **New folder inside**, open/close, rename, move out or delete. The small arrow opens and closes it, and **+** on hover adds a password straight into it.
+  - **Opening and closing:** left-click anywhere on a folder to open or close it.
+  - **Folder menu:** right-click a folder for **Add a password / note to this folder**, **New folder inside**, open/close, rename, move out or delete. On hover, **+** adds a password or note straight into it, and the pencil and bin rename or delete it.
   - **Deleting a folder** never deletes its logins or the folders inside it; they move up a level.
   - Folders, including empty ones, sync between your computers.
 - **Icons:** click **Icon** next to the name to choose:

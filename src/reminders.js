@@ -26,17 +26,46 @@ const shown = []; // keep notifications referenced so their click handlers survi
 const file = () => path.join(app.getPath('userData'), 'reminders.json');
 const valid = (r) => r && r.id && r.at && r.text;
 
+// Reminders are precious and live in one small file, so it's written safely: to a temporary file first, then
+// swapped in, with the previous good copy kept as reminders.json.bak. If the file can't be read (cut short by a
+// crash or power cut, or sealed by a key that's no longer available), the backup is used, and the unreadable file
+// is kept aside (never silently overwritten) so nothing is lost for good.
+const backupFile = () => file() + '.bak';
+
+function parseFile(p) {
+  const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const parsed = raw.sealed ? JSON.parse(safeStorage.decryptString(Buffer.from(raw.sealed, 'base64'))) : raw;
+  // 1.9.0 saved a plain list of upcoming reminders.
+  const data = Array.isArray(parsed) ? { list: parsed } : parsed || {};
+  return {
+    list: Array.isArray(data.list) ? data.list.filter(valid) : [],
+    history: Array.isArray(data.history) ? data.history.filter(valid) : [],
+  };
+}
+
 function load() {
+  list = [];
+  history = [];
+  if (!fs.existsSync(file()) && !fs.existsSync(backupFile())) return; // first run
+  for (const p of [file(), backupFile()]) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      ({ list, history } = parseFile(p));
+      if (p !== file()) {
+        // restored from the backup: keep the unreadable main file aside, then write a good one
+        if (fs.existsSync(file())) fs.copyFileSync(file(), path.join(path.dirname(file()), `reminders.unreadable-${Date.now()}.json`));
+        save();
+      }
+      return;
+    } catch {
+      // try the next one
+    }
+  }
+  // Neither could be read: keep the unreadable file aside rather than overwriting it later.
   try {
-    const raw = JSON.parse(fs.readFileSync(file(), 'utf8'));
-    const parsed = raw.sealed ? JSON.parse(safeStorage.decryptString(Buffer.from(raw.sealed, 'base64'))) : raw;
-    // 1.9.0 saved a plain list of upcoming reminders.
-    const data = Array.isArray(parsed) ? { list: parsed } : parsed || {};
-    list = Array.isArray(data.list) ? data.list.filter(valid) : [];
-    history = Array.isArray(data.history) ? data.history.filter(valid) : [];
+    fs.copyFileSync(file(), path.join(path.dirname(file()), `reminders.unreadable-${Date.now()}.json`));
   } catch {
-    list = [];
-    history = [];
+    /* nothing to keep */
   }
 }
 
@@ -46,7 +75,16 @@ function save() {
     history = history.filter((h) => (h.shownAt || h.at) >= cutoff).slice(-HISTORY_MAX);
     const data = { list, history };
     const body = safeStorage.isEncryptionAvailable() ? { sealed: safeStorage.encryptString(JSON.stringify(data)).toString('base64') } : data;
-    fs.writeFileSync(file(), JSON.stringify(body), { mode: 0o600 });
+    const tmp = file() + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(body), { mode: 0o600 });
+    try {
+      parseFile(tmp); // only swap it in if it reads back correctly
+    } catch {
+      fs.rmSync(tmp, { force: true });
+      return;
+    }
+    fs.renameSync(tmp, file());
+    fs.copyFileSync(file(), backupFile()); // a second, identical copy to fall back on
   } catch {
     /* kept in memory until the next save */
   }
