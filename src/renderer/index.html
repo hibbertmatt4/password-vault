@@ -480,13 +480,23 @@
       <div id="reminder-date" class="when-panel hidden">
         <input id="reminder-at" type="hidden" />
         <div class="cal">
+          <div class="cal-type-wrap">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+            <input id="cal-type" class="cal-type" aria-label="Type a date" autocomplete="off" />
+          </div>
+          <p id="cal-type-error" class="cal-type-error" role="alert"></p>
           <div class="cal-head">
             <button type="button" class="cal-nav" id="cal-prev" aria-label="Previous month"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
-            <div id="cal-title" class="cal-title"></div>
+            <button type="button" id="cal-title" class="cal-title" title="Choose a month and year"></button>
             <button type="button" class="cal-nav" id="cal-next" aria-label="Next month"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
           </div>
-          <div id="cal-weekdays" class="cal-weekdays"></div>
-          <div id="cal-days" class="cal-days" role="grid"></div>
+          <div class="cal-body">
+            <div id="cal-day-view">
+              <div id="cal-weekdays" class="cal-weekdays"></div>
+              <div id="cal-days" class="cal-days" role="grid"></div>
+            </div>
+            <div id="cal-months" class="cal-months hidden" role="grid" aria-label="Months"></div>
+          </div>
         </div>
         <div class="cal-side">
           <span class="when-label">Time</span>

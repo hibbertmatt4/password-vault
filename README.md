@@ -36,6 +36,8 @@ An offline, encrypted password manager for Windows and Mac.
   - **When:**
     - **After a timer:** use − / + and choose minutes, hours, days or weeks.
     - **On a date:** pick a day on the calendar, set the time with AM / PM, or use a quick pick: **Tomorrow 9 AM**, **Next Monday** or **End of month**.
+      - **Typing a date:** type it in the box above the calendar and press Enter, e.g. *3/15/2027* (in your computer's date order), *2027-03-15*, *March 15* (the next one coming up), *15 Mar 2027* or *tomorrow*.
+      - **Jumping ahead:** click the month name to pick a month and year. The arrows then move a year at a time.
     - The line at the bottom always says exactly when you'll get it.
   - **Repeat:** **Never**, **Daily**, **Weekly**, **Monthly**, **Month end** or **Yearly**, e.g. *"Netflix renews"* every month on your billing date.
     - **Monthly** reminders on the 29th–31st fall on the last day of shorter months.

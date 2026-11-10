@@ -1,6 +1,49 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 
+// Hover tips in the app's own style (green, rounded) instead of the system's plain grey ones.
+// Anything with a title="" gets one; the title moves to data-tip so the system tip doesn't show as well.
+(() => {
+  const tip = Object.assign(document.createElement('div'), { className: 'tip', role: 'tooltip' });
+  tip.hidden = true;
+  document.body.appendChild(tip);
+  let target = null;
+  let timer = null;
+  const hide = () => {
+    clearTimeout(timer);
+    target = null;
+    tip.hidden = true;
+  };
+  document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest && e.target.closest('[title], [data-tip]');
+    if (el === target) return;
+    hide();
+    if (!el) return;
+    if (el.hasAttribute('title')) {
+      el.dataset.tip = el.getAttribute('title');
+      if (!el.hasAttribute('aria-label') && !el.textContent.trim()) el.setAttribute('aria-label', el.dataset.tip);
+      el.removeAttribute('title');
+    }
+    if (!el.dataset.tip) return;
+    target = el;
+    timer = setTimeout(() => {
+      if (target !== el || !el.isConnected) return;
+      tip.textContent = el.dataset.tip;
+      tip.hidden = false;
+      const r = el.getBoundingClientRect();
+      const t = tip.getBoundingClientRect();
+      let top = r.bottom + 8;
+      if (top + t.height > window.innerHeight - 8) top = r.top - t.height - 8; // no room below: show above
+      tip.style.top = Math.max(8, top) + 'px';
+      tip.style.left = Math.max(8, Math.min(r.left + r.width / 2 - t.width / 2, window.innerWidth - t.width - 8)) + 'px';
+    }, 450);
+  });
+  document.addEventListener('mousedown', hide, true);
+  document.addEventListener('keydown', hide, true);
+  document.addEventListener('scroll', hide, true);
+  window.addEventListener('blur', hide);
+})();
+
 // Spell check only where you write sentences (notes, reminders) — never names, usernames, websites or passwords.
 document.querySelectorAll('input, textarea').forEach((el) => {
   if (el.dataset.spell !== 'on') el.spellcheck = false;
@@ -2194,36 +2237,54 @@ function setCalPick(d, showMonth = true) {
     b.classList.toggle('active', on);
     b.setAttribute('aria-checked', String(on));
   });
+  if (document.activeElement !== $('cal-type')) {
+    $('cal-type').value = calPick.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+    $('cal-type-error').textContent = '';
+  }
   updateReminderPreview();
 }
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+const startOfToday = () => {
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  return t;
+};
+let calView = 'days'; // or 'months' (pick a month and year)
+
+// Always six rows of days (the end of last month and start of next month greyed in), so the pop-up
+// never changes size from one month to the next.
 function renderCalendar() {
+  const today = startOfToday();
+  const months = calView === 'months';
+  $('cal-day-view').classList.toggle('hidden', months);
+  $('cal-months').classList.toggle('hidden', !months);
+  $('cal-prev').setAttribute('aria-label', months ? 'Previous year' : 'Previous month');
+  $('cal-next').setAttribute('aria-label', months ? 'Next year' : 'Next month');
+  if (months) return renderMonthPicker(today);
   $('cal-title').textContent = calMonth.toLocaleDateString([], { month: 'long', year: 'numeric' });
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
   const shown = reminderAt() || calPick; // with "Month end", the day it will really be
-  const first = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
-  const days = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate();
+  const start = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1 - calMonth.getDay()); // the Sunday on or before the 1st
   const cells = [];
-  for (let i = 0; i < first.getDay(); i++) cells.push(Object.assign(document.createElement('span'), { className: 'cal-blank' }));
-  for (let day = 1; day <= days; day++) {
-    const date = new Date(calMonth.getFullYear(), calMonth.getMonth(), day);
+  for (let i = 0; i < 42; i++) {
+    const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'cal-day';
-    b.textContent = day;
+    b.textContent = date.getDate();
     b.setAttribute('aria-label', date.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+    const inMonth = date.getMonth() === calMonth.getMonth();
+    if (!inMonth) b.classList.add('other-month');
     if (sameDay(date, today)) b.classList.add('today');
     if (sameDay(date, shown)) {
       b.classList.add('selected');
       b.setAttribute('aria-selected', 'true');
     }
-    if (day === days) b.classList.add('month-end');
+    if (inMonth && date.getDate() === new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()) b.classList.add('month-end');
     if (date < today) b.disabled = true;
     b.addEventListener('click', () => {
       const d = new Date(date);
       d.setHours(calPick.getHours(), calPick.getMinutes(), 0, 0);
-      setCalPick(d, false);
+      setCalPick(d, !inMonth); // a greyed day from next/last month also turns the page
     });
     cells.push(b);
   }
@@ -2231,19 +2292,128 @@ function renderCalendar() {
   // can't go back before this month
   $('cal-prev').disabled = calMonth.getFullYear() === today.getFullYear() && calMonth.getMonth() <= today.getMonth();
 }
+
+// Month-and-year view: the arrows change the year; click a month to see its days.
+function renderMonthPicker(today) {
+  const year = calMonth.getFullYear();
+  $('cal-title').textContent = String(year);
+  const cells = [];
+  for (let m = 0; m < 12; m++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cal-month';
+    b.textContent = new Date(year, m, 1).toLocaleDateString([], { month: 'short' });
+    if (year === calPick.getFullYear() && m === calPick.getMonth()) b.classList.add('selected');
+    if (year === today.getFullYear() && m === today.getMonth()) b.classList.add('today');
+    if (year < today.getFullYear() || (year === today.getFullYear() && m < today.getMonth())) b.disabled = true;
+    b.addEventListener('click', () => {
+      calMonth = new Date(year, m, 1);
+      calView = 'days';
+      renderCalendar();
+    });
+    cells.push(b);
+  }
+  $('cal-months').replaceChildren(...cells);
+  $('cal-prev').disabled = year <= today.getFullYear();
+}
 (() => {
   const names = [];
   for (let i = 0; i < 7; i++) names.push(new Date(2026, 1, 1 + i).toLocaleDateString([], { weekday: 'short' }).slice(0, 2)); // 1 Feb 2026 was a Sunday
   $('cal-weekdays').replaceChildren(...names.map((n) => Object.assign(document.createElement('span'), { textContent: n })));
 })();
-$('cal-prev').addEventListener('click', () => {
-  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1);
+const stepCalendar = (dir) => {
+  const step = calView === 'months' ? 12 : 1;
+  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + dir * step, 1);
+  if (calView === 'months' && calMonth < new Date(startOfToday().getFullYear(), 0, 1)) calMonth = new Date(startOfToday().getFullYear(), 0, 1);
+  renderCalendar();
+};
+$('cal-prev').addEventListener('click', () => stepCalendar(-1));
+$('cal-next').addEventListener('click', () => stepCalendar(1));
+$('cal-title').addEventListener('click', () => {
+  calView = calView === 'days' ? 'months' : 'days';
   renderCalendar();
 });
-$('cal-next').addEventListener('click', () => {
-  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1);
-  renderCalendar();
+
+// ---------- typing a date ----------
+// Understands e.g. "3/15/2027", "15/3/2027" (in the order this computer uses), "2027-03-15", "March 15 2027",
+// "15 Mar", "Mar 15" (the next one coming up), "today", "tomorrow".
+const DATE_ORDER = (() => {
+  try {
+    return new Intl.DateTimeFormat([], { day: 'numeric', month: 'numeric', year: 'numeric' })
+      .formatToParts(new Date(2027, 2, 15))
+      .map((p) => p.type)
+      .filter((t) => ['day', 'month', 'year'].includes(t));
+  } catch {
+    return ['month', 'day', 'year'];
+  }
+})();
+const MONTH_NAMES = Array.from({ length: 12 }, (_, m) => [
+  new Date(2027, m, 1).toLocaleDateString([], { month: 'long' }).toLowerCase(),
+  new Date(2027, m, 1).toLocaleDateString('en', { month: 'long' }).toLowerCase(),
+]);
+function parseTypedDate(text) {
+  const s = String(text || '').trim().toLowerCase().replace(/(\d)(st|nd|rd|th)\b/g, '$1').replace(/,/g, ' ');
+  if (!s) return null;
+  const today = startOfToday();
+  if (s === 'today') return today;
+  if (s === 'tomorrow') return new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  let y, m, d;
+  let iso = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(s);
+  if (iso) [y, m, d] = [+iso[1], +iso[2] - 1, +iso[3]];
+  else if (/^\d{1,4}[-/.]\d{1,2}([-/.]\d{1,4})?$/.test(s)) {
+    const nums = s.split(/[-/.]/).map(Number);
+    const order = nums.length === 3 ? DATE_ORDER : DATE_ORDER.filter((t) => t !== 'year');
+    order.forEach((t, i) => {
+      if (t === 'day') d = nums[i];
+      else if (t === 'month') m = nums[i] - 1;
+      else y = nums[i];
+    });
+  } else {
+    const words = s.split(/\s+/);
+    for (const w of words) {
+      if (/^\d{4}$/.test(w)) y = +w;
+      else if (/^\d{1,2}$/.test(w)) d = +w;
+      else if (w.length >= 3) {
+        const i = MONTH_NAMES.findIndex((names) => names.some((n) => n.startsWith(w)));
+        if (i >= 0) m = i;
+      }
+    }
+  }
+  if (m === undefined || d === undefined) return null;
+  if (y !== undefined && y < 100) y += 2000;
+  let date = new Date(y === undefined ? today.getFullYear() : y, m, d);
+  if (date.getMonth() !== m || date.getDate() !== d) return null; // e.g. 30 February
+  if (y === undefined && date < today) date = new Date(today.getFullYear() + 1, m, d); // "Mar 15" = the next one
+  return date;
+}
+function applyTypedDate() {
+  const typed = $('cal-type').value;
+  const date = parseTypedDate(typed);
+  if (!date) {
+    $('cal-type-error').textContent = typed.trim() ? 'That doesn’t look like a date. Try e.g. ' + exampleDate() : '';
+    return false;
+  }
+  if (date < startOfToday()) {
+    $('cal-type-error').textContent = 'That date has already passed.';
+    return false;
+  }
+  date.setHours(calPick.getHours(), calPick.getMinutes(), 0, 0);
+  calView = 'days';
+  $('cal-type').blur();
+  setCalPick(date);
+  return true;
+}
+const exampleDate = () => new Date(2027, 2, 15).toLocaleDateString([], { day: 'numeric', month: 'numeric', year: 'numeric' });
+$('cal-type').placeholder = `Type a date, e.g. ${exampleDate()} or “March 15”`;
+$('cal-type').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault(); // don't set the reminder yet
+    applyTypedDate();
+  }
 });
+$('cal-type').addEventListener('input', () => ($('cal-type-error').textContent = ''));
+$('cal-type').addEventListener('change', applyTypedDate);
+$('cal-type').addEventListener('focus', () => $('cal-type').select());
 function readTime() {
   let h = Math.min(12, Math.max(1, parseInt($('time-hour').value, 10) || 12));
   const m = Math.min(59, Math.max(0, parseInt($('time-minute').value, 10) || 0));
@@ -2334,6 +2504,7 @@ function openReminder(entry, forEditor = false) {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(9, 0, 0, 0);
+  calView = 'days';
   setCalPick(tomorrow);
   setReminderUnit('hours');
   setReminderWhen('timer');

@@ -99,7 +99,7 @@ button.primary { background: var(--green); border-color: var(--green); color: va
 button.primary:hover { background: var(--green-light); border-color: var(--green-light); }
 button.danger { color: var(--negative); border-color: rgba(192, 57, 43, 0.35); }
 button.danger:hover { background: rgba(192, 57, 43, 0.08); border-color: var(--negative); }
-button:disabled { opacity: 0.6; cursor: wait; }
+button:disabled { opacity: 0.6; cursor: default; }
 button:focus-visible { outline: 2px solid var(--tan); outline-offset: 2px; }
 
 /* 4. LOGO ---------------------------------------------------------------- */
@@ -445,6 +445,18 @@ button.inline-link:hover { background: none; border: none; color: var(--green-li
   width: min(520px, 100%); max-height: calc(100vh - 80px); overflow: auto; padding: 26px;
   animation: menu-drop 0.15s ease;
 }
+/* Scroll bars in pop-ups and the main panes: a slim rounded bar that sits inside the rounded corners
+   (the track stops short of the top and bottom) instead of the plain square system one. */
+.modal::-webkit-scrollbar, .detail::-webkit-scrollbar, .menu::-webkit-scrollbar, .icon-grid::-webkit-scrollbar, .notes-editor::-webkit-scrollbar { width: 12px; height: 12px; }
+.modal::-webkit-scrollbar-track { background: transparent; margin: 18px 0; }
+.detail::-webkit-scrollbar-track, .menu::-webkit-scrollbar-track, .icon-grid::-webkit-scrollbar-track, .notes-editor::-webkit-scrollbar-track { background: transparent; margin: 6px 0; }
+.modal::-webkit-scrollbar-thumb, .detail::-webkit-scrollbar-thumb, .menu::-webkit-scrollbar-thumb, .icon-grid::-webkit-scrollbar-thumb, .notes-editor::-webkit-scrollbar-thumb {
+  background: rgba(49, 61, 42, 0.22); border-radius: 10px; border: 4px solid transparent; background-clip: padding-box; min-height: 40px;
+}
+.modal::-webkit-scrollbar-thumb:hover, .detail::-webkit-scrollbar-thumb:hover, .menu::-webkit-scrollbar-thumb:hover, .icon-grid::-webkit-scrollbar-thumb:hover, .notes-editor::-webkit-scrollbar-thumb:hover {
+  background-color: var(--tan); border-width: 3px;
+}
+.modal::-webkit-scrollbar-corner, .detail::-webkit-scrollbar-corner, .notes-editor::-webkit-scrollbar-corner { background: transparent; }
 .modal-title { font-family: var(--font-display); font-size: 1.45rem; font-weight: 700; color: var(--green); }
 .modal-sub { font-size: 13px; color: var(--text-muted); margin: 4px 0 16px; line-height: 1.5; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
@@ -697,6 +709,43 @@ button.reminder-cancel { height: 30px; padding: 0 12px; font-size: 12px; flex: n
 .stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button,
 .time-input::-webkit-inner-spin-button, .time-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
+/* hover tips (replacing the system's grey ones) */
+.tip {
+  position: fixed; z-index: 20000; max-width: 260px; pointer-events: none;
+  padding: 6px 10px; border-radius: 8px; background: var(--green); color: var(--cream);
+  font-size: 12px; font-weight: 500; line-height: 1.35; white-space: normal;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); animation: tip-in 0.12s ease;
+}
+.tip[hidden] { display: none; }
+@keyframes tip-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+
+/* typing a date */
+.cal-type-wrap {
+  display: flex; align-items: center; gap: 8px; padding: 0 12px; margin-bottom: 4px;
+  background: #fff; border: 1px solid rgba(49, 61, 42, 0.18); border-radius: 12px; color: var(--tan);
+}
+.cal-type-wrap:focus-within { border-color: var(--tan); }
+.cal-type-wrap input.cal-type { border: none; padding: 9px 0; background: transparent; font-size: 13px; }
+.cal-type-error { min-height: 16px; margin: 0 0 4px 4px; font-size: 11.5px; color: var(--negative); }
+/* month title: click for months and years */
+button.cal-title {
+  height: 34px; padding: 0 12px; border: none; border-radius: var(--radius-pill); background: transparent;
+  font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--green);
+}
+button.cal-title:hover { background: var(--accent-tint, rgba(197, 168, 130, 0.25)); }
+/* always the same height: six rows of days, or the twelve months */
+.cal-body { height: 252px; }
+.cal-days { grid-template-rows: repeat(6, 36px); }
+button.cal-day.other-month { color: rgba(49, 61, 42, 0.35); }
+.cal-months { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px; height: 100%; padding-top: 6px; }
+button.cal-month {
+  height: auto; padding: 0; border: none; border-radius: 12px; background: #fff; color: var(--text-dark); font-size: 13.5px;
+}
+button.cal-month:hover:not(:disabled):not(.selected) { background: var(--accent-tint, rgba(197, 168, 130, 0.25)); }
+button.cal-month.today { box-shadow: inset 0 0 0 1.5px var(--tan); font-weight: 600; }
+button.cal-month.selected { background: var(--green); color: var(--cream); font-weight: 600; }
+button.cal-month:disabled { background: transparent; color: rgba(49, 61, 42, 0.3); opacity: 1; }
+
 /* calendar + time */
 #reminder-date { display: grid; grid-template-columns: 1fr 170px; gap: 18px; }
 #reminder-date.hidden { display: none; }
@@ -891,7 +940,8 @@ button.nav-mini:hover { background: rgba(197, 168, 130, 0.22); border-color: rgb
 .entry-list li.folder-empty:hover { background: none; color: rgba(244, 224, 202, 0.45); border-color: rgba(197, 168, 130, 0.25); }
 
 /* drag & drop */
-.entry-list li[draggable='true'] { cursor: grab; }
+.entry-list li[draggable='true'] { cursor: pointer; }
+.entry-list li[draggable='true']:active { cursor: grabbing; }
 .entry-list li.dragging { opacity: 0.45; }
 .entry-list li.drop-target, .entry-list.drop-unfiled {
   background: rgba(197, 168, 130, 0.22) !important; border-color: var(--tan) !important; color: var(--cream);
