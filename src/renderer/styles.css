@@ -1034,6 +1034,32 @@ button.nav-mini:hover { background: rgba(197, 168, 130, 0.22); border-color: rgb
 }
 .entry-list.drop-unfiled { border-radius: 10px; outline: 1px dashed var(--tan); outline-offset: -4px; }
 
+/* "A reminder went off": stays until closed */
+.missed-toast {
+  position: fixed; right: 2rem; bottom: 5.5rem; z-index: 9990; width: min(380px, calc(100vw - 4rem));
+  display: flex; align-items: flex-start; gap: 12px; padding: 14px 12px 14px 16px;
+  background: var(--green); color: var(--cream); border-radius: 14px; border: 1px solid rgba(197, 168, 130, 0.35);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28); animation: missed-in 0.2s ease;
+}
+@keyframes missed-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.missed-toast.hidden { display: none; }
+.missed-bell { flex: none; margin-top: 1px; color: var(--tan); }
+.missed-body { flex: 1; min-width: 0; }
+.missed-title { font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
+.missed-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.missed-list li { font-size: 12.5px; line-height: 1.35; display: flex; flex-direction: column; gap: 1px; }
+.missed-text { overflow-wrap: anywhere; text-align: left; }
+button.missed-link {
+  height: auto; padding: 0; border: none; background: none; color: var(--cream); font-size: 12.5px; line-height: 1.35;
+  white-space: normal; justify-content: flex-start; text-decoration: underline; text-decoration-color: rgba(197, 168, 130, 0.6); text-underline-offset: 3px;
+}
+button.missed-link:hover { background: none; border: none; color: #fff; }
+.missed-when, .missed-more { font-size: 11.5px; color: rgba(244, 224, 202, 0.6); }
+button.missed-close {
+  flex: none; width: 28px; height: 28px; padding: 0; border-radius: 8px; border: none; background: transparent; color: rgba(244, 224, 202, 0.75);
+}
+button.missed-close:hover { background: rgba(244, 224, 202, 0.14); color: var(--cream); border: none; }
+
 /* 12. TOAST -------------------------------------------------------------- */
 .toast {
   position: fixed; bottom: 2rem; right: 2rem; z-index: 10000;

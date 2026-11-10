@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('api', {
   addReminder: (r) => ipcRenderer.invoke('reminders:add', r),
   removeReminder: (id) => ipcRenderer.invoke('reminders:remove', id),
   clearReminderHistory: () => ipcRenderer.invoke('reminders:clearHistory'),
+  missedReminders: () => ipcRenderer.invoke('reminders:missed'),
+  dismissMissedReminders: () => ipcRenderer.invoke('reminders:dismissMissed'),
   onRemindersChanged: (cb) => ipcRenderer.on('reminders:changed', () => cb()),
   onReminderOpen: (cb) => ipcRenderer.on('reminder:open', (_e, id) => cb(id)),
   isWindowVisible: () => ipcRenderer.invoke('window:isVisible'),

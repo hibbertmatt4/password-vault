@@ -46,6 +46,7 @@ An offline, encrypted password manager for Windows and Mac.
     - **Monthly** reminders on the 29th–31st fall on the last day of shorter months.
     - **Month end** is always the last day of the month: 28th or 29th in February, 30th or 31st otherwise.
   - **Arriving:** as a system notification even while the window is closed or the vault is locked. One that came due while the computer was off arrives when Password Vault next starts, marked with when it was due. A repeating reminder that was missed several times arrives once, then carries on. Clicking it opens the login it's about.
+  - **Missed reminders:** if one went off while you weren't looking at the app, then the first time you open Password Vault afterwards (even at the lock screen) a message appears in the corner, *"A reminder went off"*, listing what it was and when. It stays until you close it with the **X**, so you can't miss it. Opening the app by clicking the reminder's own notification counts as seeing it, so no message appears for that one.
   - **Seeing them:**
     - **Settings → Reminders** lists every upcoming reminder, with its repeat and login, then the ones **Sent recently** (last 60 days).
     - Click a reminder there to open its login.

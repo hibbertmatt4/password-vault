@@ -837,6 +837,12 @@ function registerIpc() {
   });
   // Reminders are only shown or changed while the vault is unlocked (they fire either way).
   ipcMain.handle('reminders:list', () => (vault.isUnlocked() ? reminders.all() : { upcoming: [], recent: [] }));
+  // Reminders that went off while nobody was looking (also while locked: the notification showed the same text).
+  ipcMain.handle('reminders:missed', () => reminders.missed().map(({ id, text, at, loginId, loginTitle }) => ({ id, text, at, loginId, loginTitle })));
+  ipcMain.handle('reminders:dismissMissed', () => {
+    reminders.dismissMissed();
+    return { ok: true };
+  });
   ipcMain.handle('reminders:clearHistory', () => {
     if (!vault.isUnlocked()) return { ok: false, locked: true };
     reminders.clearHistory();
@@ -1020,13 +1026,20 @@ if (!app.requestSingleInstanceLock()) {
     if (startedHidden && !tray) showWindow(); // never end up running with no window and no tray icon
     // Reminders: fire any that came due while the app wasn't running, then keep a timer for the next one.
     // Clicking one opens the app (and the login it's about, once unlocked).
+    let remindersStarting = true;
     reminders.init((fired, clicked) => {
+      // Seen already when the user clicked its notification, or was looking at the app when it went off.
+      // Otherwise the app shows an "a reminder went off" message the next time it's opened.
+      // (Ones that came due while the app wasn't running are never "seen": the message shows when it starts.)
+      const looking = !remindersStarting && win && !win.isDestroyed() && win.isVisible() && win.isFocused();
+      if (clicked || looking) reminders.markSeen(fired);
       send('reminders:changed');
       if (clicked) {
         showWindow();
         if (fired[0].loginId) send('reminder:open', fired[0].loginId);
       }
     });
+    remindersStarting = false;
     // Clicking a notification (e.g. "update available") brings the app to the front.
     app.on('show-window', showWindow);
 

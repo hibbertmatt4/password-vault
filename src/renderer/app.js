@@ -2827,6 +2827,59 @@ window.api.onReminderOpen((id) => {
   selectEntry(id);
 });
 
+// ---------- "a reminder went off" message ----------
+// If a reminder went off while the app wasn't being looked at, this message appears the next time the app is
+// opened, and stays until it's closed with the X (opening the app by clicking the reminder's notification counts
+// as having seen that reminder).
+async function refreshMissed() {
+  let list = [];
+  try {
+    list = await window.api.missedReminders();
+  } catch {
+    /* not available yet */
+  }
+  const box = $('missed-toast');
+  if (!list.length) return hide(box);
+  $('missed-title').textContent = list.length === 1 ? 'A reminder went off' : `${list.length} reminders went off`;
+  const shownCount = 3;
+  const items = list.slice(-shownCount).reverse().map((r) => {
+    const li = document.createElement('li');
+    const name = document.createElement(r.loginId ? 'button' : 'span');
+    if (r.loginId) {
+      name.type = 'button';
+      name.className = 'missed-link';
+      name.title = 'Open this login';
+      name.addEventListener('click', () => {
+        if (!$('app-screen').classList.contains('hidden') && entries.some((e) => e.id === r.loginId)) selectEntry(r.loginId);
+        else toast('Unlock Password Vault to open it');
+      });
+    }
+    name.className = (name.className + ' missed-text').trim();
+    name.textContent = (r.loginTitle ? `${r.loginTitle}: ` : '') + r.text;
+    const when = document.createElement('span');
+    when.className = 'missed-when';
+    when.textContent = whenText(r.at);
+    li.append(name, when);
+    return li;
+  });
+  if (list.length > shownCount) {
+    const more = document.createElement('li');
+    more.className = 'missed-more';
+    more.textContent = `and ${list.length - shownCount} more`;
+    items.push(more);
+  }
+  $('missed-list').replaceChildren(...items);
+  show(box);
+}
+$('missed-close').addEventListener('click', async () => {
+  hide($('missed-toast'));
+  await window.api.dismissMissedReminders();
+});
+window.api.onShown(refreshMissed); // the window was just opened
+window.addEventListener('focus', refreshMissed);
+window.api.onRemindersChanged(refreshMissed);
+refreshMissed();
+
 // ---------- settings ----------
 $('settings-btn').addEventListener('click', () => {
   for (const id of ['s-current', 's-new', 's-confirm']) $(id).value = '';

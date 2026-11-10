@@ -97,7 +97,8 @@ function fireDue() {
   const due = list.filter((r) => new Date(r.at) <= now);
   if (due.length) {
     for (const r of due) {
-      history.push({ id: `${r.id}@${r.at}`, reminderId: r.id, text: r.text, at: r.at, loginId: r.loginId, loginTitle: r.loginTitle, repeat: r.repeat || null, shownAt: new Date(now).toISOString() });
+      // unseen: the user hasn't looked at it yet (see missed())
+      history.push({ id: `${r.id}@${r.at}`, reminderId: r.id, text: r.text, at: r.at, loginId: r.loginId, loginTitle: r.loginTitle, repeat: r.repeat || null, shownAt: new Date(now).toISOString(), unseen: true });
       show(r, now - new Date(r.at) > 5 * 60 * 1000);
     }
     list = list
@@ -134,6 +135,31 @@ function init(handler) {
 /** Upcoming reminders (soonest first) and ones already shown (newest first). */
 function all() {
   return { upcoming: sorted(), recent: [...history].sort((a, b) => (b.shownAt || b.at).localeCompare(a.shownAt || a.at)) };
+}
+
+/** Reminders that went off while the user wasn't looking and haven't been dismissed (oldest first). */
+function missed() {
+  return history.filter((h) => h.unseen).sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** The user has seen these (they opened the app from the notification, or were in the app when it went off). */
+function markSeen(items) {
+  const ids = new Set((items || []).map((x) => (typeof x === 'string' ? x : `${x.id}@${x.at}`)));
+  let changed = false;
+  for (const h of history) {
+    if (h.unseen && ids.has(h.id)) {
+      h.unseen = false;
+      changed = true;
+    }
+  }
+  if (changed) save();
+}
+
+/** The user closed the "a reminder went off" message. */
+function dismissMissed() {
+  let changed = false;
+  for (const h of history) if (h.unseen) (h.unseen = false), (changed = true);
+  if (changed) save();
 }
 
 /** Add one: { text, at (ISO date), repeat? ('day'|'week'|'month'|'year'), loginId?, loginTitle? }. */
@@ -191,4 +217,4 @@ function loginDeleted(id) {
   }
 }
 
-module.exports = { init, all, add, remove, clearHistory, loginChanged, loginDeleted, check: fireDue, _stepFrom: stepFrom };
+module.exports = { init, all, missed, markSeen, dismissMissed, add, remove, clearHistory, loginChanged, loginDeleted, check: fireDue, _stepFrom: stepFrom };
