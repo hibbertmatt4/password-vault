@@ -542,7 +542,111 @@ button.icon-pick .avatar { width: 30px; height: 30px; border-radius: 7px; font-s
   margin-left: auto; font-size: 10px; letter-spacing: 0; padding: 1px 7px; border-radius: var(--radius-pill);
   background: rgba(197, 168, 130, 0.18); color: var(--tan);
 }
-.entry-list li.in-folder { margin-left: 10px; }
+.entry-list li.in-folder { margin-left: calc(10px + var(--depth, 0) * 14px); }
+/* folders inside folders */
+/* formatted notes: toolbar + editing box */
+.notes-box {
+  background: #fff; border: 1px solid rgba(49, 61, 42, 0.2); border-radius: var(--radius-small);
+  transition: border-color 0.15s; overflow: hidden;
+}
+.notes-box:focus-within { border-color: var(--tan); }
+.notes-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 5px 6px;
+  border-bottom: 1px solid rgba(49, 61, 42, 0.1); background: var(--tint-1);
+}
+button.tb {
+  height: 30px; min-width: 30px; padding: 0 7px; border: none; border-radius: 7px; background: transparent;
+  color: var(--green); font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+}
+button.tb:hover { background: rgba(49, 61, 42, 0.08); }
+button.tb.active { background: rgba(49, 61, 42, 0.14); }
+button.tb-size { font-size: 12.5px; min-width: 84px; justify-content: space-between; }
+.tb-serif { font-family: Georgia, serif; }
+.tb-colour { font-weight: 700; border-bottom: 3px solid #c0392b; line-height: 1; padding: 0 2px 1px; }
+.tb-hl-bar { stroke: #e2c400; stroke-width: 3; }
+.tb-sep { width: 1px; height: 18px; background: rgba(49, 61, 42, 0.15); margin: 0 4px; }
+.notes-editor {
+  min-height: 110px; max-height: 420px; overflow: auto; resize: vertical;
+  padding: 10px 12px; font-size: 13.5px; line-height: 1.5; color: var(--text-dark); outline: none; user-select: text;
+  overflow-wrap: anywhere; cursor: text;
+}
+.swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.15); flex: none; }
+.swatch.sw-yellow { background: #fff176; } .swatch.sw-green { background: #b9f6ca; } .swatch.sw-blue { background: #b3e5fc; }
+.swatch.sw-pink { background: #f8bbd0; } .swatch.sw-orange { background: #ffcc80; }
+.swatch.sw-none { background: linear-gradient(135deg, #fff 45%, #c0392b 45%, #c0392b 55%, #fff 55%); }
+.swatch.tc-automatic { background: #2f3b28; } .swatch.tc-red { background: #c0392b; } .swatch.tc-orange { background: #d35400; }
+.swatch.tc-green { background: #2e7d32; } .swatch.tc-blue { background: #1e5fa8; } .swatch.tc-purple { background: #7b3fa0; }
+.swatch.tc-grey { background: #7a7a7a; }
+
+/* How formatted notes look, in the editor and when viewing a login. The page blocks inline styles, so the
+   highlight and alignment the editor writes as style="" are matched here instead. */
+.rich { white-space: normal; }
+.rich p, .rich div { margin: 0; }
+.rich ul, .rich ol { margin: 4px 0; padding-left: 24px; }
+.rich font[size='1'] { font-size: 10px; }
+.rich font[size='2'] { font-size: 12px; }
+.rich font[size='3'] { font-size: 13.5px; }
+.rich font[size='4'] { font-size: 17px; }
+.rich font[size='5'] { font-size: 21px; }
+.rich font[size='6'] { font-size: 27px; }
+.rich font[size='7'] { font-size: 34px; }
+.rich [style*='background-color: rgb(255, 241, 118)'] { background-color: #fff176; }
+.rich [style*='background-color: rgb(185, 246, 202)'] { background-color: #b9f6ca; }
+.rich [style*='background-color: rgb(179, 229, 252)'] { background-color: #b3e5fc; }
+.rich [style*='background-color: rgb(248, 187, 208)'] { background-color: #f8bbd0; }
+.rich [style*='background-color: rgb(255, 204, 128)'] { background-color: #ffcc80; }
+.rich [style*='text-align: center'], .rich [align='center'] { text-align: center; }
+.rich [style*='text-align: right'], .rich [align='right'] { text-align: right; }
+.rich [style*='text-align: justify'], .rich [align='justify'] { text-align: justify; }
+.rich [style*='text-align: center'] li, .rich [style*='text-align: right'] li { list-style-position: inside; }
+.rich table { border-collapse: collapse; margin: 6px 0; min-width: 40%; max-width: 100%; }
+.rich td { border: 1px solid rgba(49, 61, 42, 0.3); padding: 5px 8px; min-width: 48px; vertical-align: top; }
+.notes-editor.rich td:focus-within { outline: 2px solid rgba(197, 168, 130, 0.6); outline-offset: -2px; }
+
+/* table size picker */
+.table-picker { position: fixed; z-index: 9000; padding: 10px; }
+.table-grid { display: grid; grid-template-columns: repeat(8, 18px); gap: 3px; }
+.table-grid button {
+  width: 18px; height: 18px; padding: 0; border-radius: 3px; border: 1px solid rgba(49, 61, 42, 0.25); background: #fff;
+}
+.table-grid button.on { background: var(--tan); border-color: var(--green); }
+.table-size { margin-top: 8px; font-size: 12px; color: var(--text-muted); text-align: center; }
+
+/* quick Edit / Delete buttons on sidebar rows (hover, or the open login) */
+.entry-list .meta { flex: 1; }
+.entry-list .row-actions { display: none; gap: 2px; margin-left: auto; flex: none; }
+.entry-list li:hover .row-actions, .entry-list li.active .row-actions, .entry-list li:focus-within .row-actions { display: inline-flex; }
+.entry-list li.dragging .row-actions { display: none; }
+button.row-btn {
+  width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 7px; background: transparent; color: rgba(244, 224, 202, 0.6);
+}
+button.row-btn svg { width: 15px; height: 15px; }
+button.row-btn:hover { background: rgba(244, 224, 202, 0.14); color: var(--cream); }
+button.row-btn.danger:hover { background: rgba(220, 120, 100, 0.22); color: #f6c2b5; }
+.folder-head .row-actions { margin: -4px 0 -4px auto; }
+.folder-head button.row-btn { width: 24px; height: 24px; }
+.folder-head:hover .count { display: none; }
+
+/* reminders */
+.reminder-list { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.reminder-card .reminder-list { margin-top: 4px; }
+.reminder-list li {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: 10px; background: var(--tint-1); border: 1px solid rgba(49, 61, 42, 0.08); color: var(--green);
+}
+.reminder-list li > svg { flex: none; color: var(--tan); }
+.reminder-body { flex: 1; min-width: 0; }
+.reminder-text { font-size: 13.5px; color: var(--text-dark); overflow-wrap: anywhere; }
+.reminder-when { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+button.reminder-cancel { height: 30px; padding: 0 12px; font-size: 12px; flex: none; }
+#reminder-form .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#reminder-amount { width: 84px; flex: none; }
+#reminder-form .segmented { flex-wrap: wrap; }
+#reminder-when-text { min-height: 1em; margin: 2px 0 0; }
+
+.folder-head.nested { width: auto; margin-left: calc(var(--depth) * 14px); margin-top: 2px; }
+.menu-indent { display: inline-block; flex: none; }
 
 /* icon picker */
 .icon-modal { width: min(600px, 100%); }
@@ -683,7 +787,7 @@ button.nav-mini:hover { background: rgba(197, 168, 130, 0.22); border-color: rgb
 .folder-head .add-here:hover { background: rgba(197, 168, 130, 0.3); color: var(--cream); }
 .folder-head .count { margin-left: auto; }
 .entry-list li.folder-empty {
-  margin-left: 10px; padding: 6px 10px; cursor: default; font-size: 11.5px; font-style: italic; color: rgba(244, 224, 202, 0.45);
+  margin-left: calc(10px + var(--depth, 0) * 14px); padding: 6px 10px; cursor: default; font-size: 11.5px; font-style: italic; color: rgba(244, 224, 202, 0.45);
   border: 1px dashed rgba(197, 168, 130, 0.25);
 }
 .entry-list li.folder-empty:hover { background: none; color: rgba(244, 224, 202, 0.45); border-color: rgba(197, 168, 130, 0.25); }

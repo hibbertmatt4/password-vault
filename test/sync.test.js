@@ -162,6 +162,30 @@ const tick = () => new Promise((r) => setTimeout(r, 5)); // make timestamps diff
     B4.setShared({ notify: { added: true, updated: true, deleted: true, updates: true } });
     A4.syncFromDisk();
     assert.strictEqual(A4.shared.notify.added, true, 'newest shared settings win');
+    // Folders inside folders: moves, renames and deletes carry everything inside along.
+    B4.syncFromDisk();
+    assert.strictEqual(A4.addFolder('Banking'), 'Banking');
+    assert.strictEqual(A4.addFolder('Personal', 'Banking'), 'Banking/Personal');
+    assert.strictEqual(A4.addFolder('a/b', ''), 'a-b', 'a "/" typed in a name never nests');
+    const bank = A4.upsert({ title: 'Chase', folder: 'Banking/Personal' });
+    A4.addFolder('Old', 'Banking/Personal');
+    assert.deepStrictEqual(A4.folders().filter((f) => f.startsWith('Banking')), ['Banking', 'Banking/Personal', 'Banking/Personal/Old']);
+    B4.syncFromDisk();
+    assert(B4.folders().includes('Banking/Personal/Old'), 'nested folders sync');
+    await tick();
+    assert.strictEqual(A4.moveFolder('Banking/Personal', ''), 'Personal');
+    assert.strictEqual(A4.list().find((e) => e.id === bank.id).folder, 'Personal');
+    assert(A4.folders().includes('Personal/Old') && !A4.folders().includes('Banking/Personal'));
+    assert.throws(() => A4.moveFolder('Personal', 'Personal/Old'), /inside itself/);
+    await tick();
+    A4.renameFolder('Personal', 'Banking/Mine');
+    assert.strictEqual(A4.list().find((e) => e.id === bank.id).folder, 'Banking/Mine');
+    await tick();
+    A4.deleteFolder('Banking');
+    assert.strictEqual(A4.list().find((e) => e.id === bank.id).folder, 'Mine', 'deleting a folder moves its contents up');
+    assert(A4.folders().includes('Mine/Old') && !A4.folders().some((f) => f.startsWith('Banking')));
+    B4.syncFromDisk();
+    assert.deepStrictEqual(B4.folders().filter((f) => /Banking|Mine|Personal/.test(f)), ['Mine', 'Mine/Old']);
     B4.lock();
     A4.lock();
 

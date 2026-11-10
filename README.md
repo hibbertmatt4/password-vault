@@ -6,6 +6,23 @@ An offline, encrypted password manager for Windows and Mac.
 - One master password unlocks everything. It is never stored anywhere.
 - Your vault is encrypted with **AES-256-GCM**. The key comes from your master password via **scrypt**. There's no account and no Password Vault server. The vault stays on your computer, or in your own cloud drive if you turn on sync.
 - Add, edit, delete and search your logins (name, username, password, website, notes).
+- **Quick edit and delete:** hover over a login in the sidebar (or open it) for ✎ **Edit** and 🗑 **Delete** buttons; folders have the same buttons for renaming and deleting. Clicking a folder also opens its menu with **Rename** and **Delete** at the top, and right-clicking a login offers **Edit**, **Remind me** and **Delete**.
+- **Formatted notes**, like writing an email or a Word document. The toolbar above Notes has:
+  - **Text:** size (Small to Huge), **bold**, *italic*, underline, ~~strikethrough~~ and text colour.
+  - **Highlight:** yellow, green, blue, pink or orange, or **No highlight**.
+  - **Layout:** bulleted and numbered lists, and align left, centre or right.
+  - **Tables:** click the table button and pick a size from the grid. Inside a table, the same button can insert or delete rows and columns, or delete the table. **Tab** moves to the next cell, and pressing it in the last cell adds a row.
+  - **Clear formatting** removes formatting from the selected text.
+  - **Shortcuts:** Ctrl/Cmd+B, I, U and Z work as usual. Ctrl/Cmd+Shift+X is strikethrough.
+  - **Pasting:** text pasted from Word, Outlook or a web page keeps its bold, italics, underline, colours, sizes, lists and tables. Pictures, links and anything else are removed.
+  - **Older versions:** the formatting syncs with everything else. A computer still on an older version shows the notes as plain text. If it edits them, the plain text wins.
+- **Spell check** in the Notes box (and in reminders): misspelled words are underlined; right-click one for suggestions or **Add to dictionary**. It uses your computer's own spell checker, so nothing is sent anywhere. Names, usernames, websites and passwords are never spell-checked.
+- **Reminders:** get a notification with your own message, e.g. *"Delete my old Netflix password"*.
+  - **Making one:** open a login and click **Remind me**, or go to **Settings → Reminders → New reminder** for one that isn't about a login.
+  - **When:** choose **After a timer** (minutes, hours, days or weeks) or **At a date & time**.
+  - **Arriving:** as a system notification even while the window is closed or the vault is locked. One that came due while the computer was off arrives when Password Vault next starts, marked with when it was due. Clicking it opens the login it's about.
+  - **Seeing and cancelling:** upcoming reminders show on their login's page and in **Settings → Reminders**, each with **Cancel**.
+  - **Where they're kept:** on that computer only, sealed by the operating system. They don't sync.
 - Built-in strong password generator and a strength meter.
 - Copied passwords are **wiped from the clipboard after 30 seconds**.
 - **Auto-locks** after 5 minutes of inactivity, or when your computer locks or sleeps. You can also lock it yourself with Ctrl+L / Cmd+L.
@@ -17,9 +34,10 @@ An offline, encrypted password manager for Windows and Mac.
 ## Folders and icons
 - **Folders:**
   - **Make one:** click **New folder** next to *Your logins*, or right-click any empty space in the sidebar.
+  - **Folders inside folders:** click a folder and choose **New folder inside**, or drag a folder onto another folder. Drag it to empty space (or choose **Move out of**) to bring it back up a level. Folders can go up to 8 levels deep.
   - **Fill it:** drag logins onto a folder, or out of it to empty space. You can also right-click a login and choose **Move to folder**, or pick a folder in the login's **Folder** dropdown.
-  - **Folder menu:** click a folder for **Add a password to this folder**, open/close, rename or delete. The small arrow opens and closes it, and **+** on hover adds a password straight into it.
-  - **Deleting a folder** never deletes its logins; they just move out of it.
+  - **Folder menu:** click a folder for **Add a password to this folder**, **New folder inside**, open/close, rename, move out or delete. The small arrow opens and closes it, and **+** on hover adds a password straight into it.
+  - **Deleting a folder** never deletes its logins or the folders inside it; they move up a level.
   - Folders, including empty ones, sync between your computers.
 - **Icons:** click **Icon** next to the name to choose:
   - **Logos:** over 100 well-known brands (Apple, Google, Netflix, banks and more).
@@ -51,6 +69,9 @@ Your passwords can be shared between your Mac and Windows computers through a cl
 **First computer**
 - **New vault:** under **Where to keep your vault**, pick your cloud drive.
 - **Existing vault:** go to **Settings → Sync between your computers → Set up sync**, pick the drive, and confirm with your master password.
+
+**Switching to a folder whose vault has a different master password**
+If the folder you pick (with **Set up sync** or **Change folder**) already has a vault with a different master password, Password Vault tells you so and asks you to type that vault's password. Your logins from this computer are combined into it, and from then on **this computer uses that vault's master password**; your old one stops working here. You'll be told this again whenever you switch to a folder with another password.
 
 **Other computers**
 1. Install the cloud drive's app and sign in.

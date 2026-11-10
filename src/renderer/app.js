@@ -1,6 +1,11 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 
+// Spell check only where you write sentences (notes, reminders) — never names, usernames, websites or passwords.
+document.querySelectorAll('input, textarea').forEach((el) => {
+  if (el.dataset.spell !== 'on') el.spellcheck = false;
+});
+
 let entries = [];
 let selectedId = null;
 let editingId = null;
@@ -421,7 +426,7 @@ $('sync-form').addEventListener('submit', async (e) => {
       }
       closeSyncModal();
       await showLockScreen();
-      toast(`Found your vault in ${res.where.name}. Unlock it to continue.`);
+      toast(`Found your vault in ${res.where.name}. Unlock it with that vault’s master password.`);
     } else {
       if (!$('sync-pw').value) {
         return ($('sync-error').textContent = $('sync-bio').classList.contains('hidden')
@@ -438,8 +443,38 @@ $('sync-form').addEventListener('submit', async (e) => {
 
 // Turn sync on, confirming with the typed master password or Touch ID / Windows Hello.
 async function enableSync(useBiometric) {
-  const res = await window.api.syncEnable(syncChoice, useBiometric ? null : $('sync-pw').value, useBiometric);
+  const currentPw = useBiometric ? null : $('sync-pw').value;
+  let res = await window.api.syncEnable(syncChoice, currentPw, useBiometric);
   $('sync-pw').value = '';
+  if (!res.ok && res.differentPassword) {
+    // That folder's vault was set up with a different master password. Say what joining it means,
+    // and have them type that vault's password.
+    const folder = syncChoice;
+    hide($('sync-modal'));
+    const typed = await ask({
+      title: 'This vault has a different master password',
+      text:
+        'The vault in that folder was set up with a different master password from the one you use here. ' +
+        'Type that vault’s master password to connect. Your logins from this computer will be combined into it, ' +
+        'and from now on you’ll unlock Password Vault on this computer with that password instead of your current one. ' +
+        'If you later switch to a folder whose vault has another password, it will change again.',
+      placeholder: 'Master password for the vault in that folder',
+      password: true,
+      ok: 'Connect and change password',
+      validate: async (pw) => {
+        if (!pw) return 'Type the master password for the vault in that folder.';
+        res = await window.api.syncEnable(folder, currentPw, false, pw);
+        if (res.ok || res.locked) return null;
+        return res.error || 'That isn’t the master password for the vault in that folder.';
+      },
+    });
+    if (!typed) {
+      show($('sync-modal'));
+      $('sync-error').textContent = 'Not connected. Your vault and master password haven’t changed.';
+      return;
+    }
+    if (res.locked) return;
+  }
   if (!res.ok) {
     if (res.cancelled || res.locked) return;
     if (res.needsPassword) {
@@ -453,6 +488,18 @@ async function enableSync(useBiometric) {
   await afterRepaint(); // let the pop-up and its blur disappear before the card changes size
   await refreshEntries();
   await renderSync(res.status);
+  if (res.passwordChanged) {
+    await ask({
+      title: 'Your master password has changed',
+      text:
+        `This computer now uses the vault in ${res.status.name}, so your master password here is now that vault’s password — ` +
+        'the one you just typed. Your old master password won’t unlock Password Vault any more. ' +
+        'Your logins from this computer were combined into it.',
+      input: false,
+      cancel: false,
+      ok: 'Got it',
+    });
+  }
   toast(`Syncing via ${res.status.name}`);
 }
 
@@ -728,6 +775,7 @@ const ICON = {
   pen: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16Z"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   open: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   out: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-2"/></svg>',
 };
 
@@ -749,6 +797,7 @@ function popupMenu(x, y, items) {
     b.className = 'menu-option' + (it.danger ? ' danger' : '') + (it.selected ? ' selected' : '');
     b.setAttribute('role', 'menuitem');
     if (it.icon) b.insertAdjacentHTML('afterbegin', it.icon);
+    if (it.depth) b.prepend(menuIndent(it.depth));
     b.appendChild(Object.assign(document.createElement('span'), { className: 'label', textContent: it.text }));
     if (it.selected) b.appendChild(Object.assign(document.createElement('span'), { className: 'check', textContent: '✓' }));
     b.addEventListener('click', () => {
@@ -777,17 +826,24 @@ window.addEventListener('resize', closeMenu);
 $('entry-list').addEventListener('scroll', closeMenu);
 
 // ---------- small pop-up: name a folder / confirm ----------
-function ask({ title, text, value = '', placeholder = '', ok, danger = false, input = true, validate }) {
+// password: a hidden master-password field; validate may be async (the pop-up stays open while it shows an error);
+// cancel: false for a notice with only one button.
+function ask({ title, text, value = '', placeholder = '', ok, danger = false, input = true, password = false, cancel = 'Cancel', validate }) {
   return new Promise((resolve) => {
     $('ask-title').textContent = title;
     $('ask-text').textContent = text || '';
     $('ask-text').classList.toggle('hidden', !text);
     $('ask-input').classList.toggle('hidden', !input);
+    $('ask-input').type = password ? 'password' : 'text';
+    $('ask-input').maxLength = password ? 1024 : 60;
     $('ask-input').value = value;
     $('ask-input').placeholder = placeholder;
     $('ask-error').textContent = '';
     $('ask-ok').textContent = ok;
+    $('ask-ok').disabled = false;
     $('ask-ok').classList.toggle('danger-fill', danger);
+    $('ask-cancel').textContent = cancel || 'Cancel';
+    $('ask-cancel').classList.toggle('hidden', cancel === false);
     show($('ask-modal'));
     if (input) {
       $('ask-input').focus();
@@ -797,16 +853,28 @@ function ask({ title, text, value = '', placeholder = '', ok, danger = false, in
       hide($('ask-modal'));
       $('ask-form').onsubmit = null;
       $('ask-cancel').onclick = null;
+      $('ask-input').value = '';
       askCancel = null;
       resolve(val);
     };
-    askCancel = () => finish(null);
+    askCancel = cancel === false ? null : () => finish(null);
     $('ask-cancel').onclick = () => finish(null);
-    $('ask-form').onsubmit = (e) => {
+    $('ask-form').onsubmit = async (e) => {
       e.preventDefault();
-      const v = input ? $('ask-input').value.trim() : true;
-      const err = validate ? validate(v) : null;
-      if (err) return ($('ask-error').textContent = err);
+      if ($('ask-ok').disabled) return;
+      const v = !input ? true : password ? $('ask-input').value : $('ask-input').value.trim();
+      $('ask-ok').disabled = true;
+      let err = null;
+      try {
+        err = validate ? await validate(v) : null;
+      } finally {
+        $('ask-ok').disabled = false;
+      }
+      if (err) {
+        $('ask-error').textContent = err;
+        if (password) $('ask-input').select();
+        return;
+      }
       finish(v);
     };
   });
@@ -819,50 +887,112 @@ $('ask-modal').addEventListener('mousedown', (e) => {
 // ---------- folder actions ----------
 const sameName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }) === 0;
 
-async function newFolder(thenMove) {
+// Folders can sit inside folders; each is known by its path, e.g. "Banking/Personal".
+const SEP = '/';
+const leafName = (p) => p.split(SEP).pop();
+const parentOf = (p) => (p.includes(SEP) ? p.slice(0, p.lastIndexOf(SEP)) : '');
+const depthOf = (p) => p.split(SEP).length - 1;
+const insideOf = (p, folder) => p === folder || p.startsWith(folder + SEP);
+const folderLabel = (p) => p.split(SEP).join(' › ');
+const childPath = (parent, name) => (parent ? parent + SEP + name : name);
+// Parents before children, each level alphabetical.
+function treeOrder(paths) {
+  return [...paths].sort((a, b) => {
+    const x = a.split(SEP);
+    const y = b.split(SEP);
+    for (let i = 0; i < Math.min(x.length, y.length); i++) {
+      const c = x[i].localeCompare(y[i], undefined, { sensitivity: 'base' });
+      if (c) return c;
+    }
+    return x.length - y.length;
+  });
+}
+const menuIndent = (depth) => Object.assign(document.createElement('span'), { className: 'menu-indent', style: `width:${depth * 14}px` });
+// A folder name that would clash with another folder next to it.
+const takenIn = (parent, name, except) => allFolders.some((f) => f !== except && parentOf(f) === parent && sameName(leafName(f), name));
+const checkFolderName = (parent, except) => (v) =>
+  !v ? 'Give the folder a name.' : v.includes(SEP) ? 'A folder name can’t contain “/”.' : takenIn(parent, v, except) ? 'There’s already a folder with that name here.' : null;
+
+async function newFolder(thenMove, parent = '') {
   const name = await ask({
-    title: 'New folder',
-    text: 'Group logins together, e.g. all your Google accounts. Drag logins onto the folder to add them.',
+    title: parent ? `New folder inside “${leafName(parent)}”` : 'New folder',
+    text: parent
+      ? `It goes inside “${folderLabel(parent)}”. Drag logins or other folders onto it to add them.`
+      : 'Group logins together, e.g. all your Google accounts. Drag logins (or other folders) onto the folder to add them.',
     placeholder: 'Folder name, e.g. Google accounts',
     ok: 'Create folder',
-    validate: (v) => (!v ? 'Give the folder a name.' : allFolders.some((f) => sameName(f, v)) ? 'You already have a folder with that name.' : null),
+    validate: checkFolderName(parent),
   });
   if (!name) return null;
-  const res = await window.api.addFolder(name);
+  const res = await window.api.addFolder(name, parent);
   if (res && res.locked) return null;
   collapsedFolders.delete(res);
+  if (parent) collapsedFolders.delete(parent);
   saveCollapsed();
   if (thenMove) await window.api.moveToFolder(thenMove, res);
   await loadData();
   renderList();
   if (thenMove && selectedId === thenMove) selectEntry(thenMove);
-  toast(thenMove ? `Moved to “${res}”` : `Folder “${res}” created`);
+  toast(thenMove ? `Moved to “${leafName(res)}”` : `Folder “${leafName(res)}” created`);
   return res;
 }
 
+// Keep folders open/closed as they were after a folder (and everything inside it) moves.
+function remapCollapsed(from, to) {
+  const moved = (f) => (to ? to + f.slice(from.length) : f.slice(from.length + 1));
+  collapsedFolders = new Set([...collapsedFolders].map((f) => (insideOf(f, from) ? moved(f) : f)).filter(Boolean));
+  saveCollapsed();
+}
+
 async function renameFolder(name) {
+  const parent = parentOf(name);
   const to = await ask({
     title: 'Rename folder',
-    value: name,
+    value: leafName(name),
     ok: 'Rename',
-    validate: (v) => (!v ? 'Give the folder a name.' : !sameName(v, name) && allFolders.some((f) => sameName(f, v)) ? 'You already have a folder with that name.' : null),
+    validate: checkFolderName(parent, name),
   });
-  if (!to || to === name) return;
-  const res = await window.api.renameFolder(name, to);
+  if (!to || to === leafName(name)) return;
+  const res = await window.api.renameFolder(name, childPath(parent, to));
   if (res && res.locked) return;
-  if (collapsedFolders.delete(name)) collapsedFolders.add(res);
+  remapCollapsed(name, res);
+  await loadData();
+  renderList();
+  if (selectedId) selectEntry(selectedId);
+  toast(`Renamed to “${leafName(res)}”`);
+}
+
+async function moveFolder(name, parent) {
+  if (parentOf(name) === parent || insideOf(parent, name)) return;
+  if (takenIn(parent, leafName(name))) {
+    const ok = await ask({
+      title: `Combine with “${leafName(name)}”?`,
+      text: `There’s already a folder called “${leafName(name)}” ${parent ? `in “${leafName(parent)}”` : 'at the top'}. Moving this one there combines the two.`,
+      ok: 'Combine',
+      input: false,
+    });
+    if (!ok) return;
+  }
+  const res = await window.api.moveFolder(name, parent);
+  if (res && res.locked) return;
+  remapCollapsed(name, res);
+  if (parent) collapsedFolders.delete(parent);
   saveCollapsed();
   await loadData();
   renderList();
   if (selectedId) selectEntry(selectedId);
-  toast(`Renamed to “${res}”`);
+  toast(parent ? `Moved “${leafName(name)}” into “${leafName(parent)}”` : `Moved “${leafName(name)}” to the top`);
 }
 
 async function deleteFolder(name) {
-  const n = entries.filter((e) => e.folder === name).length;
+  const n = entries.filter((e) => e.folder && insideOf(e.folder, name)).length;
+  const subs = allFolders.filter((f) => f !== name && insideOf(f, name) && parentOf(f) === name).length;
+  const parent = parentOf(name);
+  const dest = parent ? `up into “${leafName(parent)}”` : subs ? 'to the top of the list' : 'out of the folder';
+  const what = [n ? `${n} login${n === 1 ? '' : 's'}` : '', subs ? `${subs} folder${subs === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
   const ok = await ask({
-    title: `Delete “${name}”?`,
-    text: n ? `The folder is removed. Its ${n} login${n === 1 ? '' : 's'} won't be deleted — ${n === 1 ? 'it moves' : 'they move'} out of the folder.` : 'The folder is empty.',
+    title: `Delete “${leafName(name)}”?`,
+    text: what ? `The folder is removed. Nothing in it is deleted: its ${what} move ${dest}.` : 'The folder is empty.',
     ok: 'Delete folder',
     danger: true,
     input: false,
@@ -871,11 +1001,11 @@ async function deleteFolder(name) {
   const res = await window.api.deleteFolder(name);
   if (res && res.locked) return;
   collapsedFolders.delete(name);
-  saveCollapsed();
+  remapCollapsed(name, parent ? parent : '');
   await loadData();
   renderList();
   if (selectedId) selectEntry(selectedId);
-  toast(`Folder “${name}” deleted`);
+  toast(`Folder “${leafName(name)}” deleted`);
 }
 
 function toggleFolder(name) {
@@ -895,7 +1025,7 @@ async function moveEntry(id, folder) {
   await loadData();
   renderList();
   if (selectedId === id) selectEntry(id);
-  toast(folder ? `Moved “${e.title}” to “${folder}”` : `Moved “${e.title}” out of its folder`);
+  toast(folder ? `Moved “${e.title}” to “${leafName(folder)}”` : `Moved “${e.title}” out of its folder`);
 }
 
 function addPassword(folder) {
@@ -909,19 +1039,33 @@ function addPassword(folder) {
 
 function folderMenuItems(name) {
   const collapsed = collapsedFolders.has(name);
-  return [
-    { label: name },
-    { text: `Add a password to “${name}”`, icon: ICON.plus, run: () => addPassword(name) },
-    { text: collapsed ? 'Open folder' : 'Close folder', icon: ICON.open, run: () => toggleFolder(name) },
-    '-',
+  const leaf = leafName(name);
+  const parent = parentOf(name);
+  const items = [
+    { label: folderLabel(name) },
     { text: 'Rename folder…', icon: ICON.pen, run: () => renameFolder(name) },
     { text: 'Delete folder…', icon: ICON.trash, danger: true, run: () => deleteFolder(name) },
+    '-',
+    { text: `Add a password to “${leaf}”`, icon: ICON.plus, run: () => addPassword(name) },
+    { text: `New folder inside “${leaf}”…`, icon: ICON.folderPlus, run: () => newFolder(null, name) },
+    { text: collapsed ? 'Open folder' : 'Close folder', icon: ICON.open, run: () => toggleFolder(name) },
   ];
+  if (parent) items.push({ text: `Move out of “${leafName(parent)}”`, icon: ICON.out, run: () => moveFolder(name, parentOf(parent)) });
+  return items;
 }
 
 function entryMenuItems(entry) {
-  const items = [{ label: entry.title }, { text: 'Open', icon: ICON.key, run: () => selectEntry(entry.id) }, '-', { label: 'Move to folder' }];
-  for (const f of allFolders) items.push({ text: f, icon: ICON.folder, selected: entry.folder === f, run: () => moveEntry(entry.id, f) });
+  const items = [
+    { label: entry.title },
+    { text: 'Open', icon: ICON.key, run: () => selectEntry(entry.id) },
+    { text: 'Edit', icon: ICON.pen, run: () => editLogin(entry) },
+    { text: 'Remind me…', icon: ICON.bell, run: () => openReminder(entry) },
+    { text: 'Delete…', icon: ICON.trash, danger: true, run: () => deleteLogin(entry) },
+    '-',
+    { label: 'Move to folder' },
+  ];
+  for (const f of treeOrder(allFolders))
+    items.push({ text: leafName(f), depth: depthOf(f), icon: ICON.folder, selected: entry.folder === f, run: () => moveEntry(entry.id, f) });
   items.push({ text: 'New folder…', icon: ICON.folderPlus, run: () => newFolder(entry.id) });
   if (entry.folder) items.push('-', { text: 'Remove from folder', icon: ICON.out, run: () => moveEntry(entry.id, '') });
   return items;
@@ -935,22 +1079,26 @@ function sidebarMenuItems() {
 }
 
 // ---------- drag & drop ----------
-let draggingId = null;
+let draggingId = null; // a login being dragged
+let draggingFolder = null; // or a folder being dragged
 function clearDropMarks() {
   document.querySelectorAll('#entry-list .drop-target').forEach((el) => el.classList.remove('drop-target'));
   $('entry-list').classList.remove('drop-unfiled');
 }
-// Where a drop over `target` would put the login: a folder name, '' for "no folder", or null.
+// Where a drop over `target` would put the login / folder: a folder path, '' for "no folder", or null.
 function dropFolderFor(target) {
   const row = target.closest('#entry-list li');
-  if (row && row.dataset.folder !== undefined) return row.dataset.folder;
-  if (target.closest('#entry-list')) return '';
-  return null;
+  let folder = null;
+  if (row && row.dataset.folder !== undefined) folder = row.dataset.folder;
+  else if (target.closest('#entry-list')) folder = '';
+  // A folder can't go inside itself, and dropping it where it already is does nothing.
+  if (draggingFolder && folder !== null && (insideOf(folder, draggingFolder) || parentOf(draggingFolder) === folder)) return null;
+  return folder;
 }
 $('entry-list').addEventListener('dragover', (e) => {
-  if (!draggingId) return;
+  if (!draggingId && !draggingFolder) return;
   const folder = dropFolderFor(e.target);
-  if (folder === null) return;
+  if (folder === null) return clearDropMarks();
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
   clearDropMarks();
@@ -968,15 +1116,21 @@ $('entry-list').addEventListener('drop', (e) => {
   e.preventDefault();
   const folder = dropFolderFor(e.target);
   const id = draggingId;
+  const moving = draggingFolder;
   clearDropMarks();
-  if (id && folder !== null) moveEntry(id, folder);
+  if (folder === null) return;
+  if (id) moveEntry(id, folder);
+  else if (moving) moveFolder(moving, folder);
 });
 
 // ---------- sidebar rows ----------
 function entryRow(entry, inFolder) {
   const li = document.createElement('li');
   if (entry.id === selectedId) li.classList.add('active');
-  if (inFolder) li.classList.add('in-folder');
+  if (inFolder) {
+    li.classList.add('in-folder');
+    li.style.setProperty('--depth', depthOf(entry.folder));
+  }
   li.dataset.folder = entry.folder || '';
   li.draggable = true;
   const meta = document.createElement('div');
@@ -988,7 +1142,13 @@ function entryRow(entry, inFolder) {
   u.className = 'u';
   u.textContent = entry.username || entry.url || '';
   meta.append(t, u);
-  li.append(avatarFor(entry), meta);
+  // Quick Edit / Delete buttons, shown on hover and on the open login.
+  const actions = Object.assign(document.createElement('span'), { className: 'row-actions' });
+  actions.append(
+    rowButton(ICON.pen, `Edit “${entry.title}”`, () => editLogin(entry)),
+    rowButton(ICON.trash, `Delete “${entry.title}”`, () => deleteLogin(entry), true)
+  );
+  li.append(avatarFor(entry), meta, actions);
   li.addEventListener('click', () => selectEntry(entry.id));
   li.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -1010,13 +1170,46 @@ function entryRow(entry, inFolder) {
   return li;
 }
 
+// A small icon button inside a sidebar row (doesn't open the row or start a drag).
+function rowButton(icon, title, run, danger = false) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'row-btn' + (danger ? ' danger' : '');
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.draggable = false;
+  b.innerHTML = icon;
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeMenu();
+    run();
+  });
+  b.addEventListener('mousedown', (e) => e.stopPropagation());
+  return b;
+}
+
 function folderHeader(name, count, collapsed) {
   const li = document.createElement('li');
-  li.className = 'folder-head' + (collapsed ? ' collapsed' : '');
+  const depth = depthOf(name);
+  li.className = 'folder-head' + (collapsed ? ' collapsed' : '') + (depth ? ' nested' : '');
+  if (depth) li.style.setProperty('--depth', depth);
   li.dataset.folder = name;
   li.setAttribute('role', 'button');
   li.setAttribute('aria-expanded', String(!collapsed));
-  li.title = 'Click for options · drag logins here';
+  li.title = 'Click for options · drag logins or folders here · drag to move';
+  li.draggable = true;
+  li.addEventListener('dragstart', (e) => {
+    draggingFolder = name;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', leafName(name));
+    closeMenu();
+    requestAnimationFrame(() => li.classList.add('dragging'));
+  });
+  li.addEventListener('dragend', () => {
+    draggingFolder = null;
+    li.classList.remove('dragging');
+    clearDropMarks();
+  });
   const chev = document.createElement('span');
   chev.className = 'chev-btn';
   chev.title = collapsed ? 'Open folder' : 'Close folder';
@@ -1031,14 +1224,19 @@ function folderHeader(name, count, collapsed) {
     'beforeend',
     '<svg class="folder-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>'
   );
-  const label = Object.assign(document.createElement('span'), { className: 'folder-name', textContent: name });
-  const add = Object.assign(document.createElement('span'), { className: 'add-here', textContent: '+', title: `Add a password to “${name}”` });
+  const label = Object.assign(document.createElement('span'), { className: 'folder-name', textContent: leafName(name) });
+  const add = Object.assign(document.createElement('span'), { className: 'add-here', textContent: '+', title: `Add a password to “${leafName(name)}”` });
   add.addEventListener('click', (e) => {
     e.stopPropagation();
     addPassword(name);
   });
   const c = Object.assign(document.createElement('span'), { className: 'count', textContent: count });
-  li.append(label, add, c);
+  const actions = Object.assign(document.createElement('span'), { className: 'row-actions' });
+  actions.append(
+    rowButton(ICON.pen, `Rename “${leafName(name)}”`, () => renameFolder(name)),
+    rowButton(ICON.trash, `Delete “${leafName(name)}”`, () => deleteFolder(name), true)
+  );
+  li.append(label, add, c, actions);
   // Click (or right-click) the folder for its menu: add a password here, open/close, rename, delete.
   const menu = (e) => {
     e.preventDefault();
@@ -1066,28 +1264,43 @@ function renderList() {
     list.appendChild(li);
     return;
   }
-  // Folders first (alphabetical, including empty ones), then logins that aren't in a folder.
+  // Folders first (alphabetical, including empty ones, each with its folders then its logins inside),
+  // then logins that aren't in a folder.
   const groups = new Map();
   for (const e of items) {
     const f = e.folder || '';
     if (!groups.has(f)) groups.set(f, []);
     groups.get(f).push(e);
   }
-  const names = searching ? [...groups.keys()].filter(Boolean) : [...new Set([...allFolders, ...[...groups.keys()].filter(Boolean)])];
-  names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  for (const name of names) {
+  const used = [...groups.keys()].filter(Boolean);
+  const names = new Set(searching ? used : [...allFolders, ...used]);
+  for (const n of [...names]) for (let p = parentOf(n); p; p = parentOf(p)) names.add(p); // the folders above
+  const children = new Map();
+  for (const n of treeOrder(names)) {
+    const p = parentOf(n);
+    if (!children.has(p)) children.set(p, []);
+    children.get(p).push(n);
+  }
+  const selected = current();
+  const countIn = (name) => items.filter((e) => e.folder && insideOf(e.folder, name)).length;
+  const addFolder = (name) => {
     const group = groups.get(name) || [];
+    const subs = children.get(name) || [];
     // Searching opens every folder; a folder holding the open login stays open too.
-    const collapsed = !searching && collapsedFolders.has(name) && !group.some((e) => e.id === selectedId);
-    list.appendChild(folderHeader(name, group.length, collapsed));
-    if (collapsed) continue;
+    const holdsSelected = selected && selected.folder && insideOf(selected.folder, name);
+    const collapsed = !searching && collapsedFolders.has(name) && !holdsSelected;
+    list.appendChild(folderHeader(name, countIn(name), collapsed));
+    if (collapsed) return;
+    for (const sub of subs) addFolder(sub);
     for (const e of group) list.appendChild(entryRow(e, true));
-    if (!group.length) {
+    if (!group.length && !subs.length) {
       const empty = Object.assign(document.createElement('li'), { className: 'folder-empty', textContent: 'Empty — drag logins here' });
       empty.dataset.folder = name;
+      empty.style.setProperty('--depth', depthOf(name));
       list.appendChild(empty);
     }
-  }
+  };
+  for (const top of children.get('') || []) addFolder(top);
   for (const e of groups.get('') || []) list.appendChild(entryRow(e, false));
 }
 
@@ -1111,6 +1324,7 @@ function current() {
   return entries.find((e) => e.id === selectedId);
 }
 
+let shownLoginId = null;
 function selectEntry(id) {
   selectedId = id;
   renderList();
@@ -1123,7 +1337,7 @@ function selectEntry(id) {
   if (e.folder) {
     const chip = document.createElement('span');
     chip.className = 'folder-chip';
-    chip.textContent = e.folder;
+    chip.textContent = folderLabel(e.folder);
     chip.title = 'Folder';
     eyebrow.append(document.createTextNode(' · '), chip);
   }
@@ -1133,9 +1347,16 @@ function selectEntry(id) {
   $('reveal-btn').textContent = 'Show';
   $('v-url').textContent = e.url;
   $('v-url-field').classList.toggle('hidden', !e.url);
-  $('v-notes').textContent = e.notes;
+  const rich = RichNotes.richFor(e);
+  const notesView = $('v-notes');
+  notesView.classList.toggle('rich', !!rich);
+  if (rich) notesView.innerHTML = rich; // already cleaned: only formatting tags survive
+  else notesView.textContent = e.notes;
   $('v-notes-field').classList.toggle('hidden', !e.notes);
   $('v-meta').textContent = `Last updated ${new Date(e.updatedAt).toLocaleString()}`;
+  if (shownLoginId !== e.id) $('v-reminders').classList.add('hidden'); // until this login's reminders load
+  shownLoginId = e.id;
+  renderReminders();
   showPane('view-pane');
 }
 
@@ -1175,7 +1396,8 @@ function openEditor(entry) {
   $('e-password').type = 'password';
   $('e-reveal').textContent = 'Show';
   $('e-url').value = entry ? entry.url : '';
-  $('e-notes').value = entry ? entry.notes : '';
+  $('e-notes').innerHTML = (entry && RichNotes.richFor(entry)) || RichNotes.fromPlain(entry ? entry.notes : '');
+  updateToolbar();
   setEditorFolder(entry ? entry.folder || '' : '');
   closeFolderPicker();
   editingIcon = entry ? entry.icon || null : null;
@@ -1185,10 +1407,234 @@ function openEditor(entry) {
   $('e-title').focus();
 }
 
+// ---------- formatted notes: the toolbar ----------
+// (The cleaning, tables and colours live in notes-editor.js.)
+const notesEd = $('e-notes');
+let notesRange = null; // the selection in the notes, kept while a toolbar menu has the focus
+function rememberNotesSelection() {
+  const sel = getSelection();
+  if (sel.rangeCount && notesEd.contains(sel.getRangeAt(0).commonAncestorContainer)) notesRange = sel.getRangeAt(0).cloneRange();
+}
+function focusNotes() {
+  notesEd.focus();
+  if (notesRange && notesEd.contains(notesRange.commonAncestorContainer)) {
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(notesRange);
+  }
+}
+function runNotes(cmd, value = null) {
+  focusNotes();
+  document.execCommand('styleWithCSS', false, false);
+  document.execCommand(cmd, false, value);
+  rememberNotesSelection();
+  updateToolbar();
+}
+const nodeEl = (n) => (n && n.nodeType === 1 ? n : n && n.parentElement);
+function notesCell() {
+  const r = document.activeElement === notesEd && getSelection().rangeCount ? getSelection().getRangeAt(0) : notesRange;
+  const el = r && nodeEl(r.startContainer);
+  const td = el && el.closest('td');
+  return td && notesEd.contains(td) ? td : null;
+}
+function updateToolbar() {
+  const inNotes = document.activeElement === notesEd;
+  for (const b of document.querySelectorAll('#notes-toolbar [data-cmd]')) {
+    let on = false;
+    if (inNotes && b.dataset.cmd !== 'removeFormat') {
+      try {
+        on = document.queryCommandState(b.dataset.cmd);
+      } catch {
+        on = false;
+      }
+    }
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+  // text size: the nearest size set around the cursor
+  let size = '3';
+  const r = inNotes && getSelection().rangeCount ? getSelection().getRangeAt(0) : null;
+  const f = r && nodeEl(r.startContainer) && nodeEl(r.startContainer).closest('font[size]');
+  if (f && notesEd.contains(f)) size = f.getAttribute('size');
+  const s = RichNotes.SIZES.find((x) => x[1] === size);
+  $('tb-size-label').textContent = s ? s[0] : size > '3' ? 'Huge' : 'Small';
+}
+document.addEventListener('selectionchange', () => {
+  if (document.activeElement !== notesEd) return;
+  rememberNotesSelection();
+  updateToolbar();
+});
+notesEd.addEventListener('blur', () => setTimeout(updateToolbar, 0));
+
+// Clicking the toolbar keeps the cursor in the notes.
+$('notes-toolbar').addEventListener('mousedown', (e) => {
+  if (e.target.closest('button')) e.preventDefault();
+});
+const swatch = (cls) => `<span class="swatch ${cls}"></span>`;
+const btnPos = (b) => {
+  const r = b.getBoundingClientRect();
+  return [r.left, r.bottom + 4];
+};
+$('notes-toolbar').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.cmd) return runNotes(b.dataset.cmd);
+  rememberNotesSelection();
+  const [x, y] = btnPos(b);
+  if (b.dataset.menu === 'size') {
+    const current = $('tb-size-label').textContent;
+    popupMenu(x, y, RichNotes.SIZES.map(([text, v]) => ({ text, selected: text === current, run: () => runNotes('fontSize', v) })));
+  } else if (b.dataset.menu === 'highlight') {
+    popupMenu(x, y, [
+      ...RichNotes.HIGHLIGHTS.map(([text, hex]) => ({ text, icon: swatch('sw-' + text.toLowerCase()), run: () => runNotes('hiliteColor', hex) })),
+      '-',
+      { text: 'No highlight', icon: swatch('sw-none'), run: () => runNotes('hiliteColor', 'transparent') },
+    ]);
+  } else if (b.dataset.menu === 'colour') {
+    popupMenu(x, y, RichNotes.COLOURS.map(([text, hex]) => ({ text, icon: swatch('tc-' + text.toLowerCase()), run: () => runNotes('foreColor', hex) })));
+  } else if (b.dataset.menu === 'table') {
+    const td = notesCell();
+    if (!td) return openTablePicker(x, y);
+    const edit = (fn) => () => {
+      focusNotes();
+      const next = fn(td);
+      placeCaret(next && next.isConnected ? next : td.isConnected ? td : null);
+      notesEd.dispatchEvent(new Event('input'));
+    };
+    popupMenu(x, y, [
+      { label: 'Table' },
+      { text: 'Insert row above', icon: ICON.plus, run: edit((c) => RichNotes.addRow(c, false)) },
+      { text: 'Insert row below', icon: ICON.plus, run: edit((c) => RichNotes.addRow(c, true)) },
+      { text: 'Insert column left', icon: ICON.plus, run: edit((c) => RichNotes.addColumn(c, false)) },
+      { text: 'Insert column right', icon: ICON.plus, run: edit((c) => RichNotes.addColumn(c, true)) },
+      '-',
+      { text: 'Delete row', icon: ICON.trash, danger: true, run: edit((c) => RichNotes.deleteRow(c)) },
+      { text: 'Delete column', icon: ICON.trash, danger: true, run: edit((c) => RichNotes.deleteColumn(c)) },
+      { text: 'Delete table', icon: ICON.trash, danger: true, run: edit((c) => c.closest('table').remove()) },
+      '-',
+      { text: 'Insert another table…', icon: ICON.plus, run: () => openTablePicker(x, y) },
+    ]);
+  }
+});
+
+// Put the cursor at the start of a table cell (or back in the notes).
+function placeCaret(td) {
+  notesEd.focus();
+  const sel = getSelection();
+  const r = document.createRange();
+  if (td) {
+    r.selectNodeContents(td);
+    r.collapse(true);
+  } else {
+    r.selectNodeContents(notesEd);
+    r.collapse(false);
+  }
+  sel.removeAllRanges();
+  sel.addRange(r);
+  rememberNotesSelection();
+  updateToolbar();
+}
+
+// Table size picker: hover over the grid, click to insert.
+const GRID_ROWS = 6;
+const GRID_COLS = 8;
+(() => {
+  const grid = $('table-grid');
+  for (let r = 1; r <= GRID_ROWS; r++)
+    for (let c = 1; c <= GRID_COLS; c++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.r = r;
+      b.dataset.c = c;
+      b.setAttribute('aria-label', `${r} by ${c} table`);
+      grid.appendChild(b);
+    }
+  const mark = (r, c) => {
+    for (const b of grid.children) b.classList.toggle('on', +b.dataset.r <= r && +b.dataset.c <= c);
+    $('table-size').textContent = r ? `${r} × ${c} table` : 'Insert a table';
+  };
+  grid.addEventListener('mouseover', (e) => e.target.dataset.r && mark(+e.target.dataset.r, +e.target.dataset.c));
+  grid.addEventListener('focusin', (e) => e.target.dataset.r && mark(+e.target.dataset.r, +e.target.dataset.c));
+  grid.addEventListener('mouseleave', () => mark(0, 0));
+  grid.addEventListener('mousedown', (e) => e.preventDefault());
+  grid.addEventListener('click', (e) => {
+    if (!e.target.dataset.r) return;
+    closeTablePicker();
+    insertTable(+e.target.dataset.r, +e.target.dataset.c);
+  });
+})();
+function openTablePicker(x, y) {
+  closeMenu();
+  const p = $('table-picker');
+  for (const b of $('table-grid').children) b.classList.remove('on');
+  $('table-size').textContent = 'Insert a table';
+  show(p);
+  const r = p.getBoundingClientRect();
+  p.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
+  p.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
+}
+function closeTablePicker() {
+  hide($('table-picker'));
+}
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('#table-picker') && !e.target.closest('[data-menu="table"]')) closeTablePicker();
+});
+function insertTable(rows, cols) {
+  focusNotes();
+  const before = new Set(notesEd.querySelectorAll('table'));
+  document.execCommand('insertHTML', false, RichNotes.tableHtml(rows, cols));
+  const table = [...notesEd.querySelectorAll('table')].find((t) => !before.has(t));
+  placeCaret(table ? table.querySelector('td') : null);
+}
+
+// Tab / Shift+Tab move between table cells (Tab in the last cell adds a row). Ctrl+Shift+X: strikethrough.
+notesEd.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'x') {
+    e.preventDefault();
+    return runNotes('strikeThrough');
+  }
+  if (e.key !== 'Tab') return;
+  const td = notesCell();
+  if (!td) return;
+  e.preventDefault();
+  const cells = [...td.closest('table').querySelectorAll('td')];
+  const i = cells.indexOf(td);
+  if (e.shiftKey) return i > 0 && placeCaret(cells[i - 1]);
+  if (i < cells.length - 1) return placeCaret(cells[i + 1]);
+  placeCaret(RichNotes.addRow(td, true));
+  notesEd.dispatchEvent(new Event('input'));
+});
+
+// Pasting (from Word, Outlook, a web page…) keeps simple formatting and drops everything else.
+notesEd.addEventListener('paste', (e) => {
+  const html = e.clipboardData.getData('text/html');
+  const text = e.clipboardData.getData('text/plain');
+  e.preventDefault();
+  if (html) document.execCommand('insertHTML', false, RichNotes.sanitize(html));
+  else if (text) document.execCommand('insertText', false, text);
+});
+// Text dragged in from elsewhere is cleaned the same way (moving text within the notes is left alone).
+let draggingInNotes = false;
+notesEd.addEventListener('dragstart', () => (draggingInNotes = true));
+notesEd.addEventListener('dragend', () => (draggingInNotes = false));
+notesEd.addEventListener('drop', (e) => {
+  if (draggingInNotes) return;
+  const html = e.dataTransfer && e.dataTransfer.getData('text/html');
+  if ((e.dataTransfer && e.dataTransfer.files.length) || html) e.preventDefault();
+  if (html) {
+    const pos = document.caretRangeFromPoint(e.clientX, e.clientY);
+    if (pos) {
+      getSelection().removeAllRanges();
+      getSelection().addRange(pos);
+    }
+    document.execCommand('insertHTML', false, RichNotes.sanitize(html));
+  }
+});
+
 // ---------- folder picker in the editor (styled to match the app) ----------
 function setEditorFolder(name) {
   $('e-folder').value = name || '';
-  $('folder-trigger-label').textContent = name || 'No folder';
+  $('folder-trigger-label').textContent = name ? folderLabel(name) : 'No folder';
   $('folder-trigger').classList.toggle('no-folder', !name); // (not "empty": that class is the welcome screen's)
 }
 
@@ -1202,12 +1648,13 @@ function openFolderPicker() {
   const menu = $('folder-menu');
   menu.replaceChildren();
   const current = $('e-folder').value;
-  const option = (text, value, icon) => {
+  const option = (text, value, icon, depth = 0) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'menu-option' + (value === current ? ' selected' : '');
     b.setAttribute('role', 'option');
     b.insertAdjacentHTML('afterbegin', icon);
+    if (depth) b.prepend(menuIndent(depth));
     b.appendChild(Object.assign(document.createElement('span'), { className: 'label', textContent: text }));
     b.appendChild(Object.assign(document.createElement('span'), { className: 'check', textContent: '✓' }));
     b.addEventListener('click', () => {
@@ -1218,9 +1665,10 @@ function openFolderPicker() {
   };
   menu.appendChild(option('No folder', '', ICON.out));
   // folders the vault knows about, plus one typed for this login that isn't saved yet
-  const names = [...new Set([...allFolders, ...(current ? [current] : [])])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  if (names.length) menu.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' }));
-  for (const f of names) menu.appendChild(option(f, f, ICON.folder));
+  const names = new Set([...allFolders, ...(current ? [current] : [])]);
+  for (const n of [...names]) for (let p = parentOf(n); p; p = parentOf(p)) names.add(p);
+  if (names.size) menu.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' }));
+  for (const f of treeOrder(names)) menu.appendChild(option(leafName(f), f, ICON.folder, depthOf(f)));
   menu.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' }));
   const nb = document.createElement('button');
   nb.type = 'button';
@@ -1439,13 +1887,16 @@ $('edit-pane').addEventListener('submit', async (e) => {
     $('e-title').focus();
     return toast('Please give this entry a name');
   }
+  // Notes: plain text always (search, older versions of the app), plus the cleaned formatting if there is any.
+  const notesHtml = RichNotes.sanitize($('e-notes').innerHTML);
   const saved = await window.api.save({
     id: editingId,
     title: $('e-title').value,
     username: $('e-username').value,
     password: $('e-password').value,
     url: $('e-url').value,
-    notes: $('e-notes').value,
+    notes: RichNotes.toText(notesHtml),
+    notesHtml: RichNotes.hasFormatting(notesHtml) ? notesHtml : '',
     folder: $('e-folder').value,
     icon: editingIcon, // null = automatic (matching logo or first letter)
   });
@@ -1455,8 +1906,7 @@ $('edit-pane').addEventListener('submit', async (e) => {
   selectEntry(saved.id);
 });
 
-$('delete-btn').addEventListener('click', async () => {
-  const e = current();
+async function deleteLogin(e) {
   if (!e) return;
   // (The app's own pop-up, not the browser's confirm(): on Windows that one can leave text fields
   // unable to take typing until you switch windows.)
@@ -1465,10 +1915,167 @@ $('delete-btn').addEventListener('click', async () => {
   const res = await window.api.remove(e.id);
   if (res && res.locked) return;
   await loadData();
-  selectedId = null;
+  const wasOpen = selectedId === e.id;
+  if (wasOpen) selectedId = null;
   renderList();
-  showPane(null);
-  toast('Deleted');
+  if (wasOpen) showPane(null);
+  toast(`Deleted “${e.title}”`);
+}
+$('delete-btn').addEventListener('click', () => deleteLogin(current()));
+
+function editLogin(e) {
+  if (!e) return;
+  selectedId = e.id;
+  renderList();
+  openEditor(e);
+}
+
+// ---------- reminders: your own message, after a timer or at a date & time ----------
+let reminderFor = null; // the login a new reminder is about (or null)
+let reminderWhen = 'timer';
+let reminderUnit = 'hours';
+const UNIT_MS = { minutes: 6e4, hours: 36e5, days: 864e5, weeks: 6048e5 };
+const pad2 = (n) => String(n).padStart(2, '0');
+const localInputValue = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const whenText = (d) => new Date(d).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+function reminderAt() {
+  if (reminderWhen === 'timer') {
+    const n = Number($('reminder-amount').value);
+    if (!Number.isFinite(n) || n <= 0 || n > 999) return null;
+    return new Date(Date.now() + n * UNIT_MS[reminderUnit]);
+  }
+  const v = $('reminder-at').value;
+  const d = v ? new Date(v) : null; // "YYYY-MM-DDTHH:MM" is read as local time
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+}
+function updateReminderPreview() {
+  const at = reminderAt();
+  $('reminder-when-text').textContent = at && at > Date.now() ? `You’ll get it on ${whenText(at)}.` : '';
+}
+function setReminderWhen(w) {
+  reminderWhen = w;
+  document.querySelectorAll('[data-when]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.when === w);
+    b.setAttribute('aria-checked', String(b.dataset.when === w));
+  });
+  $('reminder-timer').classList.toggle('hidden', w !== 'timer');
+  $('reminder-date').classList.toggle('hidden', w !== 'date');
+  $('reminder-at').min = localInputValue(new Date());
+  updateReminderPreview();
+}
+function setReminderUnit(u) {
+  reminderUnit = u;
+  document.querySelectorAll('[data-unit]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.unit === u);
+    b.setAttribute('aria-checked', String(b.dataset.unit === u));
+  });
+  updateReminderPreview();
+}
+document.querySelectorAll('[data-when]').forEach((b) => b.addEventListener('click', () => setReminderWhen(b.dataset.when)));
+document.querySelectorAll('[data-unit]').forEach((b) => b.addEventListener('click', () => setReminderUnit(b.dataset.unit)));
+$('reminder-amount').addEventListener('input', updateReminderPreview);
+$('reminder-at').addEventListener('input', updateReminderPreview);
+
+function openReminder(entry) {
+  closeMenu();
+  reminderFor = entry || null;
+  $('reminder-title').textContent = entry ? `Remind me about “${entry.title}”` : 'New reminder';
+  $('reminder-text').value = '';
+  $('reminder-error').textContent = '';
+  $('reminder-amount').value = '1';
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(9, 0, 0, 0);
+  $('reminder-at').value = localInputValue(tomorrow);
+  setReminderUnit('hours');
+  setReminderWhen('timer');
+  show($('reminder-modal'));
+  $('reminder-text').focus();
+}
+function closeReminder() {
+  hide($('reminder-modal'));
+  reminderFor = null;
+}
+$('reminder-cancel').addEventListener('click', closeReminder);
+$('reminder-modal').addEventListener('mousedown', (e) => {
+  if (e.target === $('reminder-modal')) closeReminder();
+});
+$('reminder-modal').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    closeReminder();
+  }
+});
+$('reminder-text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    $('reminder-form').requestSubmit();
+  }
+});
+$('reminder-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $('reminder-text').value.trim();
+  const at = reminderAt();
+  const err = $('reminder-error');
+  if (!text) return (err.textContent = 'Type what you want to be reminded about.');
+  if (!at) return (err.textContent = reminderWhen === 'timer' ? 'Choose how long, from 1 to 999.' : 'Choose a date and time.');
+  if (at <= Date.now()) return (err.textContent = 'Choose a time in the future.');
+  const res = await window.api.addReminder({
+    text,
+    at: at.toISOString(),
+    loginId: reminderFor ? reminderFor.id : null,
+    loginTitle: reminderFor ? reminderFor.title : null,
+  });
+  if (res.locked) return closeReminder();
+  if (!res.ok) return (err.textContent = res.error);
+  closeReminder();
+  await renderReminders();
+  toast(`Reminder set for ${whenText(res.reminder.at)}`);
+});
+
+function reminderItem(r, showLogin) {
+  const li = document.createElement('li');
+  li.insertAdjacentHTML('afterbegin', ICON.bell);
+  const body = Object.assign(document.createElement('div'), { className: 'reminder-body' });
+  body.append(
+    Object.assign(document.createElement('div'), { className: 'reminder-text', textContent: r.text }),
+    Object.assign(document.createElement('div'), {
+      className: 'reminder-when',
+      textContent: whenText(r.at) + (showLogin && r.loginTitle ? ` · ${r.loginTitle}` : ''),
+    })
+  );
+  const cancel = Object.assign(document.createElement('button'), { type: 'button', className: 'reminder-cancel', textContent: 'Cancel' });
+  cancel.addEventListener('click', async () => {
+    const res = await window.api.removeReminder(r.id);
+    if (res.locked) return;
+    await renderReminders();
+    toast('Reminder cancelled');
+  });
+  li.append(body, cancel);
+  return li;
+}
+
+// Upcoming reminders: all of them in Settings, and the open login's own on its page.
+async function renderReminders() {
+  const list = await window.api.reminders();
+  const all = $('s-reminder-list');
+  all.replaceChildren(...list.map((r) => reminderItem(r, true)));
+  all.classList.toggle('hidden', !list.length);
+  const e = current();
+  const mine = e ? list.filter((r) => r.loginId === e.id) : [];
+  $('v-reminder-list').replaceChildren(...mine.map((r) => reminderItem(r, false)));
+  $('v-reminders').classList.toggle('hidden', !mine.length);
+}
+$('remind-btn').addEventListener('click', () => openReminder(current()));
+$('reminder-new').addEventListener('click', () => openReminder(null));
+window.api.onRemindersChanged(() => {
+  if (!$('app-screen').classList.contains('hidden')) renderReminders();
+});
+// Clicked a reminder's notification: show the login it's about (once unlocked).
+window.api.onReminderOpen((id) => {
+  if ($('app-screen').classList.contains('hidden') || !entries.some((e) => e.id === id)) return;
+  selectEntry(id);
 });
 
 // ---------- settings ----------
@@ -1478,6 +2085,7 @@ $('settings-btn').addEventListener('click', () => {
   renderSync();
   renderBio();
   renderBackground();
+  renderReminders();
   showPane('settings-pane');
   $('s-current').focus();
 });
@@ -1505,6 +2113,7 @@ $('settings-pane').addEventListener('submit', async (e) => {
 $('lock-btn').addEventListener('click', () => window.api.lock());
 
 window.api.onLocked((reason) => {
+  closeReminder();
   const messages = {
     idle: 'Locked after 5 minutes of inactivity.',
     system: 'Locked because your computer was locked or went to sleep.',
@@ -1676,6 +2285,7 @@ window.addEventListener('blur', closeMenus);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && openMenu) return closeMenus();
   if (e.key === 'Escape' && !$('ctx-menu').classList.contains('hidden')) return closeMenu();
+  if (e.key === 'Escape' && !$('table-picker').classList.contains('hidden')) return closeTablePicker();
   if (e.key === 'Escape' && !$('folder-menu').classList.contains('hidden')) return closeFolderPicker();
   if (e.key === 'Escape' && !$('ask-modal').classList.contains('hidden')) return askCancel && askCancel();
   if (e.key === 'Escape' && !$('icon-modal').classList.contains('hidden')) return hide($('icon-modal'));

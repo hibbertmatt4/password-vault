@@ -112,7 +112,25 @@ function sortData(d) {
   };
 }
 
-const cleanFolderName = (name) => String(name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+// Folders can sit inside folders. A folder is stored as its path, e.g. "Banking/Personal", so older copies of
+// the app (and the sync merge) still treat each one as a plain name.
+const FOLDER_SEP = '/';
+const MAX_FOLDER_DEPTH = 8;
+const cleanFolderPart = (name) => String(name || '').replace(/\//g, '-').trim().replace(/\s+/g, ' ').slice(0, 60);
+const cleanFolderName = (path) =>
+  String(path || '')
+    .split(FOLDER_SEP)
+    .map(cleanFolderPart)
+    .filter(Boolean)
+    .slice(0, MAX_FOLDER_DEPTH)
+    .join(FOLDER_SEP);
+const folderParent = (path) => (path.includes(FOLDER_SEP) ? path.slice(0, path.lastIndexOf(FOLDER_SEP)) : '');
+const isInside = (path, folder) => path === folder || path.startsWith(folder + FOLDER_SEP);
+// Every folder above this one: "A/B/C" → ["A", "A/B"].
+function folderAncestors(path) {
+  const parts = path.split(FOLDER_SEP);
+  return parts.slice(1).map((_, i) => parts.slice(0, i + 1).join(FOLDER_SEP));
+}
 
 // Which kind of computer made an edit, so the other computer can say "updated on your Mac".
 const THIS_DEVICE = process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows PC' : 'computer';
@@ -170,7 +188,7 @@ function readFeed(filePath, notifyKey) {
 }
 
 // The parts of a login an edit can change (to say e.g. "GitHub: icon changed").
-const ENTRY_FIELDS = ['title', 'username', 'password', 'url', 'notes', 'icon', 'folder'];
+const ENTRY_FIELDS = ['title', 'username', 'password', 'url', 'notes', 'notesHtml', 'icon', 'folder'];
 
 // Folders created or removed between two copies of the vault: [{ kind: added|deleted, name }].
 function diffFolders(before, after) {
@@ -402,6 +420,8 @@ class Vault {
       password: String(entry.password || ''),
       url: String(entry.url || '').trim(),
       notes: String(entry.notes || ''),
+      // Formatted notes (cleaned in the app; `notes` keeps the plain text). Too large → plain text only.
+      notesHtml: String(entry.notesHtml || '').length <= 300000 ? String(entry.notesHtml || '') : '',
       folder: cleanFolderName(entry.folder),
       icon: cleanIcon(entry.icon),
     };
@@ -427,18 +447,21 @@ class Vault {
   }
 
   // ---------- folders ----------
-  /** Every folder name: folders you created (even empty ones) plus any a login is in. */
+  /** Every folder path: folders you created (even empty ones), any a login is in, and the folders above them. */
   folders() {
     this._requireUnlocked();
     const names = new Set(Object.keys(this.data.folders));
     for (const e of this.data.entries) if (e.folder) names.add(e.folder);
+    for (const n of [...names]) for (const a of folderAncestors(n)) names.add(a);
     return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }
 
-  addFolder(name) {
+  /** Make a folder, at the top or inside `parent`. Returns its path. */
+  addFolder(name, parent = '') {
     this._requireUnlocked();
-    const n = cleanFolderName(name);
-    if (!n) throw new Error('Give the folder a name.');
+    const part = cleanFolderPart(name);
+    if (!part) throw new Error('Give the folder a name.');
+    const n = cleanFolderName(parent ? `${parent}${FOLDER_SEP}${part}` : part);
     this._ensureFolder(n, new Date().toISOString());
     this._save();
     return n;
@@ -452,30 +475,73 @@ class Vault {
     return this.upsert({ ...e, folder });
   }
 
+  /**
+   * Rename or move a folder (give its full new path). Folders and logins inside it go with it.
+   * Returns the new path.
+   */
   renameFolder(oldName, newName) {
     this._requireUnlocked();
     const to = cleanFolderName(newName);
     if (!to) throw new Error('Give the folder a name.');
-    const now = new Date().toISOString();
-    this.data.entries = this.data.entries.map((e) => (e.folder === oldName ? { ...e, folder: to, updatedAt: now, changedOn: THIS_DEVICE } : e));
-    delete this.data.folders[oldName];
-    this.data.folderDeleted[oldName] = now;
-    this._ensureFolder(to, now);
+    if (to !== oldName && isInside(to, oldName)) throw new Error('A folder can’t go inside itself.');
+    if (to === oldName) return to;
+    this._moveTree(oldName, to, new Date().toISOString());
     this._save();
     return to;
   }
 
-  /** Delete a folder. Its logins are kept and moved out of the folder. */
+  /** Move a folder (and everything in it) inside another folder, or to the top ('' ). Returns its new path. */
+  moveFolder(name, newParent = '') {
+    const last = name.split(FOLDER_SEP).pop();
+    return this.renameFolder(name, newParent ? `${newParent}${FOLDER_SEP}${last}` : last);
+  }
+
+  /**
+   * Delete a folder. Nothing in it is deleted: its logins and folders move up into the folder it was in
+   * (or out of folders, for a top-level folder).
+   */
   deleteFolder(name) {
     this._requireUnlocked();
     const now = new Date().toISOString();
-    this.data.entries = this.data.entries.map((e) => (e.folder === name ? { ...e, folder: '', updatedAt: now, changedOn: THIS_DEVICE } : e));
-    delete this.data.folders[name];
-    this.data.folderDeleted[name] = now;
+    const parent = folderParent(name);
+    const up = (path) => {
+      const rest = path.slice(name.length + 1); // what's below the deleted folder
+      return cleanFolderName(parent && rest ? `${parent}${FOLDER_SEP}${rest}` : parent || rest);
+    };
+    this.data.entries = this.data.entries.map((e) =>
+      e.folder && isInside(e.folder, name) ? { ...e, folder: up(e.folder), updatedAt: now, changedOn: THIS_DEVICE } : e
+    );
+    for (const f of this._pathsInside(name)) {
+      delete this.data.folders[f];
+      this.data.folderDeleted[f] = now;
+      if (f !== name) this._ensureFolder(up(f), now);
+    }
     this._save();
   }
 
+  // Every stored or used folder path at or below `name`.
+  _pathsInside(name) {
+    const all = new Set(Object.keys(this.data.folders).filter((f) => isInside(f, name)));
+    for (const e of this.data.entries) if (e.folder && isInside(e.folder, name)) all.add(e.folder);
+    all.add(name);
+    return [...all];
+  }
+
+  // Move folder `from` (and everything below it) to path `to`.
+  _moveTree(from, to, now) {
+    const moved = (path) => to + path.slice(from.length);
+    this.data.entries = this.data.entries.map((e) =>
+      e.folder && isInside(e.folder, from) ? { ...e, folder: moved(e.folder), updatedAt: now, changedOn: THIS_DEVICE } : e
+    );
+    for (const f of this._pathsInside(from)) {
+      delete this.data.folders[f];
+      this.data.folderDeleted[f] = now;
+      this._ensureFolder(moved(f), now);
+    }
+  }
+
   _ensureFolder(name, at) {
+    if (!name) return;
     if (!this.data.folders[name]) this.data.folders[name] = at;
     delete this.data.folderDeleted[name];
   }

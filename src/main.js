@@ -6,6 +6,7 @@ const { Vault, generatePassword, readFeed, readShared, setDeviceId } = require('
 const sync = require('./sync');
 const biometric = require('./biometric');
 const updater = require('./updater');
+const reminders = require('./reminders');
 
 const AUTO_LOCK_SECONDS = 5 * 60; // lock after 5 minutes of computer inactivity
 const CLIPBOARD_CLEAR_MS = 30 * 1000; // wipe copied passwords after 30 seconds
@@ -173,9 +174,9 @@ function listNames(names) {
 }
 
 // "icon", "password and username", "name, website and notes"
-const FIELD_NAMES = { title: 'name', username: 'username', password: 'password', url: 'website', notes: 'notes', icon: 'icon', folder: 'folder' };
+const FIELD_NAMES = { title: 'name', username: 'username', password: 'password', url: 'website', notes: 'notes', notesHtml: 'notes', icon: 'icon', folder: 'folder' };
 function fieldList(fields) {
-  const names = (fields || []).map((f) => FIELD_NAMES[f]).filter(Boolean);
+  const names = [...new Set((fields || []).map((f) => FIELD_NAMES[f]).filter(Boolean))];
   if (names.length <= 1) return names[0] || '';
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
@@ -226,7 +227,7 @@ function reportRemoteChanges() {
   if (list.length) send('sync:remoteChanges', describeRemoteChanges(list).short);
   else if (folders.length) {
     const f = folders[0];
-    const what = folders.length === 1 ? `Folder “${f.name}” was ${f.kind === 'added' ? 'added' : 'removed'}` : 'Your folders were changed';
+    const what = folders.length === 1 ? `Folder “${f.name.split('/').join(' › ')}” was ${f.kind === 'added' ? 'added' : 'removed'}` : 'Your folders were changed';
     send('sync:remoteChanges', `${what} ${placeOf(null)}`);
   }
   reportChanges(list, 'unlocked');
@@ -432,9 +433,12 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: false,
+      // Spell check is on for the notes and reminder boxes only (every other field turns it off in the page).
+      // It uses the computer's own spell checker (Windows / macOS), so nothing is sent anywhere.
+      spellcheck: true,
     },
   });
+  spellingMenu(win.webContents);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   windowCreatedBefore = true;
 
@@ -461,6 +465,28 @@ function createWindow() {
   win.on('enter-full-screen', sendFullScreen);
   win.on('leave-full-screen', sendFullScreen);
   win.webContents.on('did-finish-load', sendFullScreen);
+}
+
+// Right-click in a text box: spelling suggestions for an underlined word, plus Cut / Copy / Paste.
+function spellingMenu(contents) {
+  contents.on('context-menu', (_e, p) => {
+    if (!p.isEditable) return;
+    const items = [];
+    if (p.misspelledWord) {
+      for (const s of p.dictionarySuggestions.slice(0, 5)) items.push({ label: s, click: () => contents.replaceMisspelling(s) });
+      if (!items.length) items.push({ label: 'No spelling suggestions', enabled: false });
+      items.push({ label: 'Add to dictionary', click: () => contents.session.addWordToSpellCheckerDictionary(p.misspelledWord) });
+      items.push({ type: 'separator' });
+    }
+    items.push(
+      { role: 'cut', enabled: p.editFlags.canCut },
+      { role: 'copy', enabled: p.editFlags.canCopy },
+      { role: 'paste', enabled: p.editFlags.canPaste },
+      { type: 'separator' },
+      { role: 'selectAll' }
+    );
+    Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(contents) });
+  });
 }
 
 function lockVault(reason) {
@@ -551,25 +577,33 @@ function registerIpc() {
   // Settings: start syncing (move this vault into a cloud folder, merging with one already there).
   ipcMain.handle(
     'sync:enable',
-    guarded(async (_e, folder, password, useBiometric) => {
+    guarded(async (_e, folder, password, useBiometric, folderPassword) => {
       if (!vault.isUnlocked()) return { ok: false, error: 'Unlock your vault first.' };
       const who = await confirmIdentity(password, useBiometric, 'turn on sync for Password Vault');
       if (!who.ok) return who;
       const oldPath = vault.filePath;
       const existing = sync.findVaultIn(String(folder));
       if (existing && samePath(existing, oldPath)) return { ok: true };
+      let passwordChanged = false;
       if (existing) {
         const other = new Vault(existing, backupDir);
-        const opened = useBiometric ? other.unlockWithKey(vault.keyInfo().key) : await other.unlock(password);
+        let opened = useBiometric ? other.unlockWithKey(vault.keyInfo().key) : await other.unlock(password);
         if (!opened) {
           if (useBiometric) {
             // A vault from another computer is already there; combining them needs the typed password.
             return { ok: false, needsPassword: true, error: 'There’s already a vault in that folder. Type your master password to combine the two.' };
           }
-          return {
-            ok: false,
-            error: 'There is already a Password Vault in that folder with a different master password. Use the same master password on both computers, or choose another folder.',
-          };
+          // That folder's vault uses a different master password. Joining it means this computer
+          // switches to that password, so the user has to type it (and is told so first).
+          if (typeof folderPassword !== 'string' || !folderPassword) return { ok: false, differentPassword: true };
+          if (failedAttempts > 2) await sleep(Math.min(1000 * 2 ** (failedAttempts - 3), 30000));
+          opened = await other.unlock(folderPassword);
+          if (!opened) {
+            failedAttempts++;
+            return { ok: false, differentPassword: true, error: 'That isn’t the master password for the vault in that folder.' };
+          }
+          failedAttempts = 0;
+          passwordChanged = true;
         }
         other.absorb(vault); // combine both computers' logins into the synced vault
         vault.lock();
@@ -587,7 +621,9 @@ function registerIpc() {
       }
       send('vault:changed');
       biometric.refresh(vault.keyInfo()); // vault moved: Touch ID / Hello follows it
-      return { ok: true, status: syncStatus() };
+      rememberNotifyKey();
+      if (passwordChanged) syncLog('joined a synced vault with a different master password');
+      return { ok: true, passwordChanged, status: syncStatus() };
     })
   );
 
@@ -697,10 +733,33 @@ function registerIpc() {
 
   ipcMain.handle('vault:lock', () => lockVault('manual'));
   ipcMain.handle('vault:list', () => (vault.isUnlocked() ? vault.list() : []));
-  ipcMain.handle('vault:save', guarded((_e, entry) => vault.upsert(entry)));
+  ipcMain.handle(
+    'vault:save',
+    guarded((_e, entry) => {
+      const saved = vault.upsert(entry);
+      reminders.loginChanged(saved.id, saved.title);
+      return saved;
+    })
+  );
+  // Reminders are only shown or changed while the vault is unlocked (they fire either way).
+  ipcMain.handle('reminders:list', () => (vault.isUnlocked() ? reminders.all() : []));
+  ipcMain.handle('reminders:add', (_e, r) => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    try {
+      return { ok: true, reminder: reminders.add(r || {}) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  ipcMain.handle('reminders:remove', (_e, id) => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    reminders.remove(String(id));
+    return { ok: true };
+  });
   ipcMain.handle('vault:delete', guarded((_e, id) => vault.remove(id)));
   ipcMain.handle('vault:folders', () => (vault.isUnlocked() ? vault.folders() : []));
-  ipcMain.handle('vault:addFolder', guarded((_e, name) => vault.addFolder(name)));
+  ipcMain.handle('vault:addFolder', guarded((_e, name, parent) => vault.addFolder(name, typeof parent === 'string' ? parent : '')));
+  ipcMain.handle('vault:moveFolder', guarded((_e, name, parent) => vault.moveFolder(String(name), typeof parent === 'string' ? parent : '')));
   ipcMain.handle('vault:moveToFolder', guarded((_e, id, folder) => vault.moveToFolder(id, folder)));
   ipcMain.handle('vault:renameFolder', guarded((_e, from, to) => vault.renameFolder(from, to)));
   ipcMain.handle('vault:deleteFolder', guarded((_e, name) => vault.deleteFolder(name)));
@@ -835,6 +894,15 @@ if (!app.requestSingleInstanceLock()) {
     updater.onStatus(() => rebuildTrayMenu());
     applyBackgroundPrefs();
     if (startedHidden && !tray) showWindow(); // never end up running with no window and no tray icon
+    // Reminders: fire any that came due while the app wasn't running, then keep a timer for the next one.
+    // Clicking one opens the app (and the login it's about, once unlocked).
+    reminders.init((fired, clicked) => {
+      send('reminders:changed');
+      if (clicked) {
+        showWindow();
+        if (fired[0].loginId) send('reminder:open', fired[0].loginId);
+      }
+    });
     // Clicking a notification (e.g. "update available") brings the app to the front.
     app.on('show-window', showWindow);
 
@@ -846,7 +914,10 @@ if (!app.requestSingleInstanceLock()) {
     powerMonitor.on('lock-screen', () => lockVault('system'));
     powerMonitor.on('suspend', () => lockVault('system'));
     // Look for updates soon after the computer wakes up or is unlocked (timers pause during sleep).
-    powerMonitor.on('resume', () => updater.checkSoon(15000));
+    powerMonitor.on('resume', () => {
+      updater.checkSoon(15000);
+      reminders.check(); // timers pause during sleep
+    });
     powerMonitor.on('unlock-screen', () => updater.checkSoon(5000));
 
     app.on('activate', showWindow); // Mac: clicking the Dock icon
