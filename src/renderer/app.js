@@ -724,6 +724,7 @@ const BRANDS = window.BRAND_ICONS || [];
 const brandById = new Map(BRANDS.map((b) => [b.id, b]));
 const squash = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const brandByName = new Map(BRANDS.map((b) => [squash(b.title), b]));
+for (const b of BRANDS) for (const a of b.alias || []) if (!brandById.has(a)) brandById.set(a, b); // e.g. td.com → TD Bank
 
 // Without a chosen icon, show a known logo when the name or website matches one (e.g. "GitHub", "netflix.com").
 function autoBrand(entry) {
@@ -753,6 +754,14 @@ function brandTile(brand) {
   const div = document.createElement('div');
   div.className = 'avatar brand-logo';
   div.style.background = '#' + brand.hex;
+  div.title = brand.title;
+  if (brand.text) {
+    // a lettered badge for brands with no drawn logo (e.g. SoFi, Capital One)
+    div.classList.add('brand-badge', 'len-' + Math.min(brand.text.length, 4));
+    div.style.color = contrastOn(brand.hex);
+    div.textContent = brand.text;
+    return div;
+  }
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
@@ -1192,7 +1201,8 @@ function entryRow(entry, inFolder) {
     rowButton(ICON.trash, `Delete “${entry.title}”`, () => deleteLogin(entry), true)
   );
   li.append(avatarFor(entry), meta, actions);
-  li.addEventListener('click', () => selectEntry(entry.id));
+  // Clicking the open login again closes it and goes back to the blank screen.
+  li.addEventListener('click', () => (viewingLogin(entry.id) ? closeLogin() : selectEntry(entry.id)));
   li.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1367,6 +1377,29 @@ function current() {
   return entries.find((e) => e.id === selectedId);
 }
 
+// Is this login open on the page right now (not being edited)?
+function viewingLogin(id) {
+  return selectedId === id && !$('view-pane').classList.contains('hidden');
+}
+
+// Back to the blank "Your vault is ready" screen. Only from viewing a login: an open editor or Settings is left alone,
+// so clicking off never throws away unsaved changes.
+function closeLogin() {
+  if ($('view-pane').classList.contains('hidden')) return;
+  selectedId = null;
+  shownLoginId = null;
+  renderList();
+  showPane(null);
+}
+
+// Clicking empty space in the sidebar list, or the empty page around a login, closes it.
+$('entry-list').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeLogin();
+});
+document.querySelector('main.detail').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget || e.target === $('view-pane')) closeLogin();
+});
+
 let shownLoginId = null;
 function selectEntry(id) {
   selectedId = id;
@@ -1387,7 +1420,7 @@ function selectEntry(id) {
   $('v-username').textContent = e.username || '—';
   $('v-password').textContent = '••••••••••••';
   $('v-password').dataset.revealed = '';
-  $('reveal-btn').textContent = 'Show';
+  setRevealButton(false);
   $('v-url').textContent = e.url;
   $('v-url-field').classList.toggle('hidden', !e.url);
   const rich = RichNotes.richFor(e);
@@ -1410,8 +1443,13 @@ $('reveal-btn').addEventListener('click', () => {
   const revealed = !el.dataset.revealed;
   el.dataset.revealed = revealed ? '1' : '';
   el.textContent = revealed ? e.password : '••••••••••••';
-  $('reveal-btn').textContent = revealed ? 'Hide' : 'Show';
+  setRevealButton(revealed);
 });
+// The Show / Hide button keeps its eye icon: only the label and which eye is drawn change.
+function setRevealButton(revealed) {
+  $('reveal-label').textContent = revealed ? 'Hide' : 'Show';
+  $('reveal-btn').classList.toggle('revealed', revealed);
+}
 
 document.querySelectorAll('[data-copy]').forEach((btn) => {
   btn.addEventListener('click', async () => {
@@ -1420,6 +1458,15 @@ document.querySelectorAll('[data-copy]').forEach((btn) => {
     if (!e || !e[field]) return toast('Nothing to copy');
     const secs = await window.api.copy(e[field]);
     toast(field === 'password' ? `Password copied — clears in ${secs}s` : 'Copied');
+    // the button says "Copied" for a moment
+    const label = btn.querySelector('span');
+    clearTimeout(btn._copiedTimer);
+    btn.classList.add('copied');
+    label.textContent = 'Copied';
+    btn._copiedTimer = setTimeout(() => {
+      btn.classList.remove('copied');
+      label.textContent = 'Copy';
+    }, 1400);
   });
 });
 
@@ -1984,7 +2031,9 @@ function renderLogoGrid() {
   const q = squash($('logo-search').value);
   const grid = $('logo-grid');
   grid.replaceChildren();
-  const list = BRANDS.filter((b) => !q || squash(b.title).includes(q) || b.id.includes(q));
+  const list = BRANDS.filter(
+    (b) => !q || squash(b.title).includes(q) || b.id.includes(q) || (b.alias || []).some((a) => a.includes(q))
+  );
   for (const b of list) {
     const cell = document.createElement('button');
     cell.type = 'button';
@@ -2895,6 +2944,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('app-screen').classList.contains('hidden')) {
     if (!$('edit-pane').classList.contains('hidden') || !$('settings-pane').classList.contains('hidden')) {
       selectedId ? selectEntry(selectedId) : showPane(null);
+    } else if (!$('view-pane').classList.contains('hidden') && $('reminder-modal').classList.contains('hidden')) {
+      closeLogin(); // Esc on an open login → blank screen
     }
   }
 });

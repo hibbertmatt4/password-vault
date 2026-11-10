@@ -66,13 +66,15 @@ An offline, encrypted password manager for Windows and Mac.
   - **Deleting a folder** never deletes its logins or the folders inside it; they move up a level.
   - Folders, including empty ones, sync between your computers.
 - **Icons:** click **Icon** next to the name to choose:
-  - **Logos:** over 100 well-known brands (Apple, Google, Netflix, banks and more).
+  - **Logos:** almost 300 brands: banks and payment apps, streaming and subscriptions, photo and video editing, databases, airlines, shops and more.
   - **Emoji:** pick one, or type or paste any emoji.
   - **Upload:** your own image. It's cropped to a square, made small and stored encrypted in your vault, so it syncs with everything else.
   - **Letter:** the first letter of the name.
 - **Automatic logos:** if you don't choose an icon, a matching logo is shown automatically when the name or website matches a known brand (e.g. "GitHub" or `netflix.com`).
 
-Brand logos come from [Simple Icons](https://simpleicons.org) (CC0). Brand names and logos are trademarks of their owners and are only used to label your own accounts. Some companies (e.g. Microsoft) have asked for their logos to be removed from Simple Icons; use **Upload** for those.
+Brand logos come from [Simple Icons](https://simpleicons.org) (CC0). Brand names and logos are trademarks of their owners and are only used to label your own accounts. Some big names aren't in Simple Icons (e.g. SoFi, Capital One, Chime, Hulu, Microsoft); these get a lettered badge in the brand's colour instead. You can always use **Upload** for the real logo.
+
+**Getting back to the blank screen:** click the open login again, click empty space in the sidebar or on the page, or press **Esc**. (An open editor is never closed this way, so you can't lose unsaved changes.)
 
 ## Unlock with Touch ID or Windows Hello
 On a Mac with **Touch ID**, or a Windows PC with **Windows Hello** (fingerprint reader, face camera or Hello PIN), go to **Settings → Unlock with Touch ID / Windows Hello → Turn on**. Confirm with your master password and your fingerprint or face.

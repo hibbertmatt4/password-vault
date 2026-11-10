@@ -245,6 +245,55 @@ button.add-btn:hover { background: #d4b993; border-color: #d4b993; }
 }
 
 .actions { display: flex; gap: 8px; }
+
+/* Remind me / Edit / Delete at the top of a login */
+.view-actions { flex: none; }
+button.act {
+  height: 38px; padding: 0 16px 0 13px; gap: 7px; border-radius: var(--radius-pill);
+  font-size: 13px; font-weight: 500; color: var(--green);
+  background: #fff; border: 1px solid rgba(49, 61, 42, 0.14);
+  box-shadow: 0 1px 2px rgba(49, 61, 42, 0.06);
+}
+button.act svg { width: 16px; height: 16px; flex: none; color: var(--tan); transition: color 0.15s; }
+button.act:hover {
+  background: var(--tint-1); border-color: var(--tan);
+  box-shadow: 0 4px 12px rgba(49, 61, 42, 0.1); transform: translateY(-1px);
+}
+button.act:hover svg { color: var(--green); }
+button.act:active { transform: none; box-shadow: 0 1px 2px rgba(49, 61, 42, 0.06); }
+button.act.act-main { background: var(--green); border-color: var(--green); color: var(--cream); }
+button.act.act-main svg { color: var(--tan); }
+button.act.act-main:hover { background: var(--green-light); border-color: var(--green-light); }
+button.act.act-main:hover svg { color: var(--cream); }
+button.act.act-danger { color: var(--negative); border-color: rgba(192, 57, 43, 0.25); }
+button.act.act-danger svg { color: var(--negative); }
+button.act.act-danger:hover { background: rgba(192, 57, 43, 0.07); border-color: var(--negative); }
+
+/* A login's username / password / website, with Copy / Show / Open inside the same box */
+.value-box {
+  display: flex; align-items: center; gap: 4px; padding: 4px;
+  background: var(--tint-1); border: 1px solid rgba(49, 61, 42, 0.07); border-radius: var(--radius-small);
+  transition: border-color 0.15s;
+}
+.value-box:hover { border-color: rgba(197, 168, 130, 0.55); }
+.value-box .value { background: none; border: none; min-height: 32px; padding: 6px 8px; display: flex; align-items: center; }
+button.vb {
+  height: 32px; padding: 0 11px 0 9px; gap: 6px; flex: none; border-radius: 8px;
+  font-size: 12.5px; font-weight: 500; color: var(--green);
+  background: transparent; border: 1px solid transparent;
+}
+button.vb svg { width: 15px; height: 15px; flex: none; color: var(--tan); transition: color 0.15s; }
+button.vb:hover { background: #fff; border-color: rgba(49, 61, 42, 0.12); box-shadow: 0 1px 3px rgba(49, 61, 42, 0.08); }
+button.vb:hover svg { color: var(--green); }
+button.vb.vb-main { background: var(--green); border-color: var(--green); color: var(--cream); }
+button.vb.vb-main svg { color: var(--tan); }
+button.vb.vb-main:hover { background: var(--green-light); border-color: var(--green-light); }
+button.vb.vb-main:hover svg { color: var(--cream); }
+button.vb.copied, button.vb.copied:hover { background: rgba(197, 168, 130, 0.3); border-color: var(--tan); color: var(--green); }
+button.vb.copied svg { color: var(--green); }
+#reveal-btn { min-width: 78px; }
+#reveal-btn .eye-shut, #reveal-btn.revealed .eye-open { display: none; }
+#reveal-btn.revealed .eye-shut { display: block; }
 .field { margin-bottom: 16px; }
 .field > label {
   display: block; margin-bottom: 5px;
@@ -514,6 +563,16 @@ button.bio-inline svg { color: var(--tan); }
 /* fixed logo sizes per tile size (percentages collapsed to 0 inside the sidebar's flex layout) */
 .avatar.brand-logo svg { width: 18px; height: 18px; flex: none; display: block; }
 .avatar-slot.big .avatar.brand-logo svg { width: 32px; height: 32px; }
+/* lettered badges (brands with no drawn logo): sized to the tile through em, shorter text bigger */
+.avatar.brand-badge { font-family: var(--font-body); font-weight: 700; letter-spacing: -0.03em; line-height: 1; white-space: nowrap; }
+.avatar.brand-badge.len-1 { font-size: 17px; }
+.avatar.brand-badge.len-2 { font-size: 14px; }
+.avatar.brand-badge.len-3 { font-size: 11.5px; }
+.avatar.brand-badge.len-4 { font-size: 9.5px; }
+.avatar-slot.big .avatar.brand-badge.len-1 { font-size: 29px; }
+.avatar-slot.big .avatar.brand-badge.len-2 { font-size: 24px; }
+.avatar-slot.big .avatar.brand-badge.len-3 { font-size: 19px; }
+.avatar-slot.big .avatar.brand-badge.len-4 { font-size: 15.5px; }
 button.icon-pick .avatar.brand-logo svg { width: 17px; height: 17px; }
 .avatar.emoji { font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif; font-weight: 400; font-size: 19px; background: rgba(244, 224, 202, 0.12); }
 .avatar.image { padding: 0; background: #fff; }
@@ -542,7 +601,9 @@ button.icon-pick .avatar { width: 30px; height: 30px; border-radius: 7px; font-s
 /* folder groups in the sidebar */
 .folder-head {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 8px 10px; margin: 6px 0 2px; border-radius: 8px; cursor: pointer;
+  /* fixed height, so the + / edit / delete buttons that appear on hover never make the row (and the list) grow */
+  height: 34px; box-sizing: border-box; overflow: hidden;
+  padding: 0 10px; margin: 6px 0 2px; border-radius: 8px; cursor: pointer;
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em;
   color: rgba(244, 224, 202, 0.65);
 }
