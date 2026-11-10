@@ -599,6 +599,11 @@ button.tb-size { font-size: 12.5px; min-width: 84px; justify-content: space-betw
 .rich [style*='text-align: right'], .rich [align='right'] { text-align: right; }
 .rich [style*='text-align: justify'], .rich [align='justify'] { text-align: justify; }
 .rich [style*='text-align: center'] li, .rich [style*='text-align: right'] li { list-style-position: inside; }
+.rich img { max-width: 100%; height: auto; border-radius: 8px; margin: 4px 0; vertical-align: bottom; cursor: pointer; }
+.rich img[data-size='s'] { width: 30%; }
+.rich img[data-size='m'] { width: 60%; }
+.rich img[data-size='l'] { width: 100%; }
+.notes-editor img:hover { outline: 2px solid var(--tan); outline-offset: 2px; }
 .rich table { border-collapse: collapse; margin: 6px 0; min-width: 40%; max-width: 100%; }
 .rich td { border: 1px solid rgba(49, 61, 42, 0.3); padding: 5px 8px; min-width: 48px; vertical-align: top; }
 .notes-editor.rich td:focus-within { outline: 2px solid rgba(197, 168, 130, 0.6); outline-offset: -2px; }
@@ -639,11 +644,104 @@ button.row-btn.danger:hover { background: rgba(220, 120, 100, 0.22); color: #f6c
 .reminder-body { flex: 1; min-width: 0; }
 .reminder-text { font-size: 13.5px; color: var(--text-dark); overflow-wrap: anywhere; }
 .reminder-when { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.reminder-group-title { display: block; margin-top: 16px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+.reminder-group-head { display: flex; align-items: baseline; justify-content: space-between; }
+.reminder-empty { margin: 8px 0 0; }
+.reminder-list.recent li { background: transparent; }
+.reminder-list.recent .reminder-text { color: var(--text-muted); }
+.reminder-list.editor { margin: 0 0 8px; }
+.reminder-body.clickable { cursor: pointer; }
+.reminder-body.clickable:hover .reminder-text { text-decoration: underline; }
+button.add-reminder { height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
 button.reminder-cancel { height: 30px; padding: 0 12px; font-size: 12px; flex: none; }
-#reminder-form .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-#reminder-amount { width: 84px; flex: none; }
-#reminder-form .segmented { flex-wrap: wrap; }
-#reminder-when-text { min-height: 1em; margin: 2px 0 0; }
+/* files attached to a login */
+.file-list { list-style: none; padding: 0; margin: 0 0 8px; display: flex; flex-direction: column; gap: 6px; }
+.file-list li {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; border-radius: 10px;
+  background: var(--tint-1); border: 1px solid rgba(49, 61, 42, 0.08); color: var(--green);
+}
+.file-list li > svg { flex: none; color: var(--tan); }
+.file-body { flex: 1; min-width: 0; }
+.file-name { font-size: 13.5px; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-size { font-size: 12px; color: var(--text-muted); }
+.file-list button.primary { background: var(--green); color: var(--cream); border-color: var(--green); }
+
+/* reminder pop-up */
+.modal.reminder-modal { width: min(600px, 100%); }
+.reminder-modal .field { margin-bottom: 14px; }
+/* a switcher whose choices share the full width equally */
+.segmented.fill { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; width: 100%; align-self: stretch; }
+.segmented.fill button { padding: 0 6px; white-space: nowrap; }
+.repeat-choices button { font-size: 12.5px; }
+.when-panel {
+  margin: -4px 0 16px; padding: 16px; border-radius: 14px;
+  background: var(--tint-1); border: 1px solid var(--line, rgba(49, 61, 42, 0.08));
+}
+.when-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+#reminder-timer { display: flex; flex-direction: column; gap: 14px; }
+.timer-row { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.stepper {
+  display: inline-flex; align-items: center; background: #fff; border: 1px solid rgba(49, 61, 42, 0.18);
+  border-radius: var(--radius-pill); padding: 3px;
+}
+.stepper button.step {
+  width: 34px; height: 34px; padding: 0; border: none; border-radius: 50%; background: transparent;
+  font-size: 18px; color: var(--green); display: inline-flex; align-items: center; justify-content: center;
+}
+.stepper button.step:hover { background: var(--tint-2, rgba(49, 61, 42, 0.07)); }
+.stepper input, .time-input {
+  width: 58px; text-align: center; border: none; background: transparent; padding: 0;
+  font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--green);
+  -moz-appearance: textfield;
+}
+.stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button,
+.time-input::-webkit-inner-spin-button, .time-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* calendar + time */
+#reminder-date { display: grid; grid-template-columns: 1fr 170px; gap: 18px; }
+#reminder-date.hidden { display: none; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-title { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--green); }
+button.cal-nav {
+  width: 32px; height: 32px; padding: 0; border-radius: 50%; border: 1px solid rgba(49, 61, 42, 0.15); background: #fff;
+  color: var(--green); display: inline-flex; align-items: center; justify-content: center;
+}
+button.cal-nav:hover:not(:disabled) { background: var(--green); color: var(--cream); border-color: var(--green); }
+button.cal-nav:disabled { opacity: 0.35; cursor: default; }
+.cal-weekdays, .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.cal-weekdays span { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); padding: 4px 0; }
+button.cal-day {
+  height: 34px; padding: 0; border: none; border-radius: 50%; background: transparent; font-size: 13px; color: var(--text-dark);
+  width: 34px; justify-self: center; position: relative;
+}
+button.cal-day:hover:not(:disabled):not(.selected) { background: var(--accent-tint, rgba(197, 168, 130, 0.25)); }
+button.cal-day.today { box-shadow: inset 0 0 0 1.5px var(--tan); font-weight: 600; }
+button.cal-day.selected { background: var(--green); color: var(--cream); font-weight: 600; }
+button.cal-day:disabled { color: rgba(49, 61, 42, 0.25); cursor: default; }
+button.cal-day.month-end::after {
+  content: ''; position: absolute; bottom: 3px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--tan);
+}
+button.cal-day.selected.month-end::after { background: var(--cream); }
+.cal-side { display: flex; flex-direction: column; gap: 8px; border-left: 1px solid rgba(49, 61, 42, 0.1); padding-left: 18px; }
+.time-row { display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid rgba(49, 61, 42, 0.18); border-radius: 12px; padding: 6px 4px; }
+.time-input { width: 52px; }
+.time-colon { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--green); }
+.cal-side .when-label:nth-of-type(2) { margin-top: 6px; }
+.quick-picks { display: flex; flex-direction: column; gap: 6px; }
+button.chip {
+  height: 30px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 12px; text-align: left;
+  background: #fff; border: 1px solid rgba(49, 61, 42, 0.15); color: var(--green);
+}
+button.chip:hover { background: var(--accent-tint, rgba(197, 168, 130, 0.25)); border-color: var(--tan); }
+
+/* "You'll get it on …" */
+.when-summary {
+  display: flex; align-items: center; gap: 10px; margin-top: 4px; padding: 10px 14px; border-radius: 12px;
+  background: rgba(197, 168, 130, 0.18); color: var(--green); font-size: 13px;
+}
+.when-summary svg { flex: none; color: var(--green); }
+.when-summary.warn { background: rgba(192, 57, 43, 0.08); color: var(--negative, #c0392b); }
+.when-summary.warn svg { color: inherit; }
 
 .folder-head.nested { width: auto; margin-left: calc(var(--depth) * 14px); margin-top: 2px; }
 .menu-indent { display: inline-block; flex: none; }

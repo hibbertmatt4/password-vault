@@ -153,6 +153,9 @@
           <div class="field" id="v-notes-field"><label>Notes</label>
             <div id="v-notes" class="value notes"></div>
           </div>
+          <div class="field hidden" id="v-files-field"><label>Files</label>
+            <ul id="v-file-list" class="file-list"></ul>
+          </div>
         </div>
         <p id="v-meta" class="meta-line"></p>
       </div>
@@ -225,11 +228,30 @@
                 <button type="button" class="tb" data-cmd="justifyCenter" title="Centre"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 10h10M4 14h16M7 18h10"/></svg></button>
                 <button type="button" class="tb" data-cmd="justifyRight" title="Align right"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M10 10h10M4 14h16M10 18h10"/></svg></button>
                 <span class="tb-sep"></span>
+                <button type="button" class="tb" id="tb-picture" title="Insert a picture"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5.5-5.5 4 4 2.5-2.5 4.5 4.5"/></svg></button>
                 <button type="button" class="tb" data-menu="table" title="Table"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10M15 9.5v10"/></svg></button>
                 <button type="button" class="tb" data-cmd="removeFormat" title="Clear formatting"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5h12M12 5l-3 14"/><path d="m15 14 5 5M20 14l-5 5"/></svg></button>
               </div>
               <div id="e-notes" class="notes-editor rich" contenteditable="true" spellcheck="true" data-spell="on" role="textbox" aria-multiline="true" aria-labelledby="e-notes-label"></div>
             </div>
+          </div>
+          <div class="field"><label>Files</label>
+            <ul id="e-file-list" class="file-list"></ul>
+            <button type="button" id="e-file-add" class="add-reminder">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 11.5-7.8 7.8a5 5 0 0 1-7-7l8.3-8.3a3.3 3.3 0 0 1 4.7 4.7l-8.3 8.3a1.7 1.7 0 0 1-2.4-2.4L15 7"/></svg>
+              Attach a file
+            </button>
+            <p class="hint">PDFs, documents, pictures, anything, up to 10 MB each. They're encrypted inside your vault. You can also drop files onto the notes.</p>
+            <input id="e-file-input" type="file" multiple class="hidden" />
+            <input id="e-picture-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple class="hidden" />
+          </div>
+          <div class="field"><label>Reminders</label>
+            <ul id="e-reminder-list" class="reminder-list editor"></ul>
+            <button type="button" id="e-reminder-add" class="add-reminder">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>
+              Add a reminder
+            </button>
+            <p class="hint">E.g. “Netflix renews” every month, or “Change this password” in 90 days. Saved when you save this login.</p>
           </div>
         </div>
         <div class="form-actions">
@@ -331,7 +353,16 @@
               <button type="button" id="reminder-new" class="primary">New reminder</button>
             </div>
           </div>
+          <div class="reminder-group-title">Upcoming</div>
           <ul id="s-reminder-list" class="reminder-list"></ul>
+          <p id="s-reminder-empty" class="hint reminder-empty">No upcoming reminders. Add one here, or from a login with <strong>Remind me</strong>.</p>
+          <div id="s-recent-wrap" class="hidden">
+            <div class="reminder-group-head">
+              <span class="reminder-group-title">Sent recently</span>
+              <button type="button" id="s-recent-clear" class="inline-link">Clear</button>
+            </div>
+            <ul id="s-recent-list" class="reminder-list recent"></ul>
+          </div>
         </div>
 
         <div id="bio-card" class="card update-card hidden">
@@ -414,7 +445,7 @@
 
   <!-- New reminder: your own message, after a timer or at a date and time -->
   <div id="reminder-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="reminder-title">
-    <form id="reminder-form" class="modal" autocomplete="off">
+    <form id="reminder-form" class="modal reminder-modal" autocomplete="off">
       <h3 id="reminder-title" class="modal-title">New reminder</h3>
       <p id="reminder-sub" class="modal-sub">You’ll get a notification with this message, even if the window is closed.</p>
       <div class="field">
@@ -423,26 +454,74 @@
       </div>
       <div class="field">
         <label>When</label>
-        <div class="segmented" role="radiogroup" aria-label="When">
+        <div class="segmented fill" role="radiogroup" aria-label="When">
           <button type="button" role="radio" data-when="timer">After a timer</button>
-          <button type="button" role="radio" data-when="date">At a date &amp; time</button>
+          <button type="button" role="radio" data-when="date">On a date</button>
         </div>
       </div>
-      <div id="reminder-timer" class="field reminder-when">
-        <div class="row">
-          <input id="reminder-amount" type="number" min="1" max="999" value="1" aria-label="How long" />
-          <div class="segmented" role="radiogroup" aria-label="Unit">
-            <button type="button" role="radio" data-unit="minutes">Minutes</button>
-            <button type="button" role="radio" data-unit="hours">Hours</button>
-            <button type="button" role="radio" data-unit="days">Days</button>
-            <button type="button" role="radio" data-unit="weeks">Weeks</button>
+      <!-- After a timer: "Remind me in [ − 1 + ] hours" -->
+      <div id="reminder-timer" class="when-panel">
+        <div class="timer-row">
+          <span class="when-label">Remind me in</span>
+          <div class="stepper">
+            <button type="button" class="step" data-step="-1" aria-label="Less">−</button>
+            <input id="reminder-amount" type="number" min="1" max="999" value="1" aria-label="How long" />
+            <button type="button" class="step" data-step="1" aria-label="More">+</button>
+          </div>
+        </div>
+        <div class="segmented fill" role="radiogroup" aria-label="Unit">
+          <button type="button" role="radio" data-unit="minutes">Minutes</button>
+          <button type="button" role="radio" data-unit="hours">Hours</button>
+          <button type="button" role="radio" data-unit="days">Days</button>
+          <button type="button" role="radio" data-unit="weeks">Weeks</button>
+        </div>
+      </div>
+      <!-- On a date: the app's own calendar and time -->
+      <div id="reminder-date" class="when-panel hidden">
+        <input id="reminder-at" type="hidden" />
+        <div class="cal">
+          <div class="cal-head">
+            <button type="button" class="cal-nav" id="cal-prev" aria-label="Previous month"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+            <div id="cal-title" class="cal-title"></div>
+            <button type="button" class="cal-nav" id="cal-next" aria-label="Next month"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          </div>
+          <div id="cal-weekdays" class="cal-weekdays"></div>
+          <div id="cal-days" class="cal-days" role="grid"></div>
+        </div>
+        <div class="cal-side">
+          <span class="when-label">Time</span>
+          <div class="time-row">
+            <input id="time-hour" class="time-input" type="number" min="1" max="12" aria-label="Hour" />
+            <span class="time-colon">:</span>
+            <input id="time-minute" class="time-input" type="number" min="0" max="59" aria-label="Minutes" />
+          </div>
+          <div class="segmented fill" role="radiogroup" aria-label="AM or PM">
+            <button type="button" role="radio" data-ampm="AM">AM</button>
+            <button type="button" role="radio" data-ampm="PM">PM</button>
+          </div>
+          <span class="when-label">Quick picks</span>
+          <div class="quick-picks">
+            <button type="button" class="chip" data-quick="tomorrow">Tomorrow 9 AM</button>
+            <button type="button" class="chip" data-quick="monday">Next Monday</button>
+            <button type="button" class="chip" data-quick="monthEnd">End of month</button>
           </div>
         </div>
       </div>
-      <div id="reminder-date" class="field reminder-when hidden">
-        <input id="reminder-at" type="datetime-local" aria-label="Date and time" />
+      <div class="field">
+        <label>Repeat</label>
+        <div class="segmented fill repeat-choices" role="radiogroup" aria-label="Repeat">
+          <button type="button" role="radio" data-repeat="">Never</button>
+          <button type="button" role="radio" data-repeat="day">Daily</button>
+          <button type="button" role="radio" data-repeat="week">Weekly</button>
+          <button type="button" role="radio" data-repeat="month">Monthly</button>
+          <button type="button" role="radio" data-repeat="monthEnd" title="On the last day of every month (28th–31st)">Month end</button>
+          <button type="button" role="radio" data-repeat="year">Yearly</button>
+        </div>
       </div>
-      <p id="reminder-when-text" class="hint"></p>
+      <div class="when-summary">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>
+        <span id="reminder-when-text"></span>
+      </div>
       <p id="reminder-error" class="error" role="alert"></p>
       <div class="modal-actions">
         <button type="button" id="reminder-cancel">Cancel</button>

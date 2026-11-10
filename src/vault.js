@@ -56,6 +56,49 @@ function cleanIcon(icon) {
   return null;
 }
 
+// Files attached to a login, kept (encrypted) inside the vault: { id, name, type, size, data (base64), addedAt }.
+// The whole vault is saved and synced in one piece, so files are kept reasonably small.
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_LOGIN_FILES_BYTES = 25 * 1024 * 1024;
+const MAX_FILES = 20;
+const MAX_NOTES_HTML = 8 * 1024 * 1024; // formatted notes, including pictures
+const cleanFileName = (n) =>
+  String(n || 'file')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+    .trim()
+    .slice(0, 120) || 'file';
+const cleanFileType = (t) => (/^[\w.+-]{1,60}\/[\w.+-]{1,80}$/.test(String(t || '')) ? String(t) : 'application/octet-stream');
+const base64Bytes = (b) => Math.floor((b.length * 3) / 4) - (b.endsWith('==') ? 2 : b.endsWith('=') ? 1 : 0);
+
+/** Check a login's files. Ones sent without `data` keep the data they already had (matched by id). */
+function cleanAttachments(list, existing, now) {
+  if (list === undefined) return existing || [];
+  if (!Array.isArray(list)) return [];
+  const old = new Map((existing || []).map((a) => [a.id, a]));
+  const out = [];
+  let total = 0;
+  for (const a of list.slice(0, MAX_FILES)) {
+    if (!a || typeof a !== 'object') continue;
+    const prev = old.get(a.id);
+    const data = typeof a.data === 'string' ? a.data : prev ? prev.data : null;
+    if (!data || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) continue;
+    const name = cleanFileName(a.name);
+    const size = base64Bytes(data);
+    if (size > MAX_FILE_BYTES) throw new Error(`“${name}” is too big. Files can be up to 10 MB.`);
+    total += size;
+    if (total > MAX_LOGIN_FILES_BYTES) throw new Error('The files on one login can add up to 25 MB at most.');
+    out.push({
+      id: prev ? prev.id : /^[\w-]{1,64}$/.test(String(a.id)) ? String(a.id) : crypto.randomUUID(),
+      name,
+      type: cleanFileType(a.type),
+      size,
+      data,
+      addedAt: prev ? prev.addedAt : now,
+    });
+  }
+  return out;
+}
+
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 
 // Older vaults stored a plain array of entries, and had no folder list.
@@ -188,7 +231,7 @@ function readFeed(filePath, notifyKey) {
 }
 
 // The parts of a login an edit can change (to say e.g. "GitHub: icon changed").
-const ENTRY_FIELDS = ['title', 'username', 'password', 'url', 'notes', 'notesHtml', 'icon', 'folder'];
+const ENTRY_FIELDS = ['title', 'username', 'password', 'url', 'notes', 'notesHtml', 'attachments', 'icon', 'folder'];
 
 // Folders created or removed between two copies of the vault: [{ kind: added|deleted, name }].
 function diffFolders(before, after) {
@@ -411,6 +454,21 @@ class Vault {
     return this.data.entries;
   }
 
+  /** Logins for the window: files are listed by name and size only (their contents stay here until needed). */
+  listForDisplay() {
+    this._requireUnlocked();
+    return this.data.entries.map((e) =>
+      e.attachments && e.attachments.length ? { ...e, attachments: e.attachments.map(({ data, ...meta }) => meta) } : e
+    );
+  }
+
+  /** One attached file, with its contents. */
+  attachment(entryId, fileId) {
+    this._requireUnlocked();
+    const e = this.data.entries.find((x) => x.id === entryId);
+    return (e && (e.attachments || []).find((a) => a.id === fileId)) || null;
+  }
+
   upsert(entry) {
     this._requireUnlocked();
     const now = new Date().toISOString();
@@ -421,7 +479,7 @@ class Vault {
       url: String(entry.url || '').trim(),
       notes: String(entry.notes || ''),
       // Formatted notes (cleaned in the app; `notes` keeps the plain text). Too large → plain text only.
-      notesHtml: String(entry.notesHtml || '').length <= 300000 ? String(entry.notesHtml || '') : '',
+      notesHtml: String(entry.notesHtml || '').length <= MAX_NOTES_HTML ? String(entry.notesHtml || '') : '',
       folder: cleanFolderName(entry.folder),
       icon: cleanIcon(entry.icon),
     };
@@ -429,9 +487,11 @@ class Vault {
     if (entry.id) {
       const existing = this.data.entries.find((e) => e.id === entry.id);
       if (!existing) throw new Error('Entry not found.');
-      saved = { ...existing, ...clean, updatedAt: now, changedOn: THIS_DEVICE };
+      const attachments = cleanAttachments(entry.attachments, existing.attachments, now);
+      saved = { ...existing, ...clean, attachments, updatedAt: now, changedOn: THIS_DEVICE };
     } else {
-      saved = { id: crypto.randomUUID(), ...clean, createdAt: now, updatedAt: now, changedOn: THIS_DEVICE };
+      const attachments = cleanAttachments(entry.attachments, [], now);
+      saved = { id: crypto.randomUUID(), ...clean, attachments, createdAt: now, updatedAt: now, changedOn: THIS_DEVICE };
     }
     this.data.entries = [...this.data.entries.filter((e) => e.id !== saved.id), saved];
     if (saved.folder) this._ensureFolder(saved.folder, now);

@@ -16,12 +16,36 @@ An offline, encrypted password manager for Windows and Mac.
   - **Shortcuts:** Ctrl/Cmd+B, I, U and Z work as usual. Ctrl/Cmd+Shift+X is strikethrough.
   - **Pasting:** text pasted from Word, Outlook or a web page keeps its bold, italics, underline, colours, sizes, lists and tables. Pictures, links and anything else are removed.
   - **Older versions:** the formatting syncs with everything else. A computer still on an older version shows the notes as plain text. If it edits them, the plain text wins.
+- **Pictures in notes:**
+  - **Adding them:** click the picture button in the notes toolbar, paste one (e.g. a screenshot), or drop picture files onto the notes.
+  - **Size:** pictures are made smaller (at most 1600 pixels across) so the vault stays quick to sync.
+  - **Changing them:** click a picture to make it **Small**, **Medium** or **Full width**, save it, or remove it.
+  - **Viewing a login:** click a picture there to save it.
+- **Files on a login:** in the editor, **Files → Attach a file** (or drop non-picture files onto the notes) adds PDFs, documents, scans or anything else.
+  - **Limits:** up to 10 MB each and 25 MB per login. Every file is encrypted inside your vault and syncs with it.
+  - **On the login's page:** each file has **Save…**, and everyday documents and pictures also have **Open**.
+  - **Opening a file:** this puts a temporary decrypted copy in a private folder that is deleted when the vault locks or Password Vault quits.
+  - **Programs** and other unusual file types can only be saved, never opened from the app.
+  - **Older versions:** a computer still on an older version keeps the files but doesn't show them, and shows notes without pictures.
 - **Spell check** in the Notes box (and in reminders): misspelled words are underlined; right-click one for suggestions or **Add to dictionary**. It uses your computer's own spell checker, so nothing is sent anywhere. Names, usernames, websites and passwords are never spell-checked.
 - **Reminders:** get a notification with your own message, e.g. *"Delete my old Netflix password"*.
-  - **Making one:** open a login and click **Remind me**, or go to **Settings → Reminders → New reminder** for one that isn't about a login.
-  - **When:** choose **After a timer** (minutes, hours, days or weeks) or **At a date & time**.
-  - **Arriving:** as a system notification even while the window is closed or the vault is locked. One that came due while the computer was off arrives when Password Vault next starts, marked with when it was due. Clicking it opens the login it's about.
-  - **Seeing and cancelling:** upcoming reminders show on their login's page and in **Settings → Reminders**, each with **Cancel**.
+  - **Making one:**
+    - While adding or editing a login, use **Add a reminder** under Notes. It's saved when you save the login.
+    - Or open a login and click **Remind me**.
+    - Or go to **Settings → Reminders → New reminder** for one that isn't about a login.
+  - **When:**
+    - **After a timer:** use − / + and choose minutes, hours, days or weeks.
+    - **On a date:** pick a day on the calendar, set the time with AM / PM, or use a quick pick: **Tomorrow 9 AM**, **Next Monday** or **End of month**.
+    - The line at the bottom always says exactly when you'll get it.
+  - **Repeat:** **Never**, **Daily**, **Weekly**, **Monthly**, **Month end** or **Yearly**, e.g. *"Netflix renews"* every month on your billing date.
+    - **Monthly** reminders on the 29th–31st fall on the last day of shorter months.
+    - **Month end** is always the last day of the month: 28th or 29th in February, 30th or 31st otherwise.
+  - **Arriving:** as a system notification even while the window is closed or the vault is locked. One that came due while the computer was off arrives when Password Vault next starts, marked with when it was due. A repeating reminder that was missed several times arrives once, then carries on. Clicking it opens the login it's about.
+  - **Seeing them:**
+    - **Settings → Reminders** lists every upcoming reminder, with its repeat and login, then the ones **Sent recently** (last 60 days).
+    - Click a reminder there to open its login.
+    - Each login's page and editor also show its own reminders.
+  - **Cancelling:** use **Cancel** on any reminder. Deleting a login also cancels its reminders.
   - **Where they're kept:** on that computer only, sealed by the operating system. They don't sync.
 - Built-in strong password generator and a strength meter.
 - Copied passwords are **wiped from the clipboard after 30 seconds**.

@@ -35,7 +35,11 @@
   ];
   const HIGHLIGHT_BY_RGB = new Map(HIGHLIGHTS.map((h) => [h[2], h]));
   const ALIGN = ['center', 'right', 'justify'];
-  const MAX_HTML = 300000;
+  const MAX_HTML = 8 * 1024 * 1024; // pictures make notes bigger
+  const MAX_PICTURE = 3 * 1024 * 1024;
+  // Pictures are stored inside the note itself; nothing is ever loaded from the internet.
+  const PICTURE_SRC = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
+  const PICTURE_SIZES = ['s', 'm', 'l'];
   const MAX_NODES = 20000;
 
   // tag → what it becomes (anything not listed is unwrapped: its text is kept, the tag is dropped)
@@ -43,10 +47,10 @@
     P: 'p', DIV: 'div', BR: 'br', B: 'b', STRONG: 'b', I: 'i', EM: 'i', U: 'u', INS: 'u', S: 's', STRIKE: 's', DEL: 's',
     SPAN: 'span', FONT: 'font', UL: 'ul', OL: 'ol', LI: 'li', TABLE: 'table', THEAD: 'tbody', TBODY: 'tbody', TFOOT: 'tbody',
     TR: 'tr', TD: 'td', TH: 'td', H1: 'p', H2: 'p', H3: 'p', H4: 'p', H5: 'p', H6: 'p', BLOCKQUOTE: 'div', PRE: 'div',
-    SUB: 'sub', SUP: 'sup',
+    SUB: 'sub', SUP: 'sup', IMG: 'img',
   };
   // dropped with everything inside them
-  const DROP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'IFRAME', 'FRAME', 'OBJECT', 'EMBED', 'HEAD', 'TITLE', 'META', 'LINK', 'SVG', 'MATH', 'NOSCRIPT', 'IMG', 'PICTURE', 'VIDEO', 'AUDIO', 'CANVAS', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'FORM', 'XML']);
+  const DROP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'IFRAME', 'FRAME', 'OBJECT', 'EMBED', 'HEAD', 'TITLE', 'META', 'LINK', 'SVG', 'MATH', 'NOSCRIPT', 'VIDEO', 'AUDIO', 'CANVAS', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'FORM', 'XML']);
   const BLOCKS = new Set(['p', 'div', 'li', 'td']);
   const HEADING_SIZE = { H1: '6', H2: '5', H3: '4' };
 
@@ -77,6 +81,18 @@
         const tag = TAGS[name];
         if (!tag || depth > 40) {
           walk(n, to, depth + 1);
+          continue;
+        }
+        if (tag === 'img') {
+          const src = n.getAttribute('src') || '';
+          if (src.length <= MAX_PICTURE * 1.4 && PICTURE_SRC.test(src)) {
+            const img = document.createElement('img');
+            img.setAttribute('src', src);
+            const size = n.getAttribute('data-size');
+            img.setAttribute('data-size', PICTURE_SIZES.includes(size) ? size : 'm');
+            img.setAttribute('alt', '');
+            to.appendChild(img);
+          }
           continue;
         }
         const el = document.createElement(tag);
@@ -197,7 +213,7 @@
   function hasFormatting(html) {
     const root = document.createElement('div');
     root.innerHTML = sanitize(html);
-    return !!root.querySelector('b,i,u,s,sub,sup,font,span,ul,ol,table,[style]');
+    return !!root.querySelector('b,i,u,s,sub,sup,font,span,ul,ol,table,img,[style]');
   }
 
   /** Plain-text notes as editor HTML (one line per line). */

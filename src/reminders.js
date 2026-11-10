@@ -1,5 +1,6 @@
 'use strict';
-// Reminders: your own message, shown as a system notification after a timer or at a date and time.
+// Reminders: your own message, shown as a system notification after a timer or at a date and time,
+// once or repeating (every day / week / month / year, e.g. a subscription renewal).
 // Kept on this computer only (userData/reminders.json), sealed by the operating system (Mac Keychain /
 // Windows protected storage) when it can, so they can fire while the vault is locked or the window is closed.
 const { app, safeStorage, Notification } = require('electron');
@@ -9,30 +10,42 @@ const crypto = require('crypto');
 
 const MAX_TEXT = 200;
 const MAX_REMINDERS = 200;
+const HISTORY_MAX = 50;
+const HISTORY_DAYS = 60;
 const CHECK_MS = 60 * 60 * 1000; // wake at least hourly (long timers drift; also catches clock changes)
+const REPEATS = ['day', 'week', 'month', 'monthEnd', 'year'];
+// The last day of d's month, at d's time of day.
+const monthEnd = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0, d.getHours(), d.getMinutes(), d.getSeconds());
 
-let list = [];
+let list = []; // upcoming
+let history = []; // already shown: { id, text, at (when it was due), loginId, loginTitle, repeat, shownAt }
 let timer = null;
 let onFire = () => {};
 const shown = []; // keep notifications referenced so their click handlers survive
 
 const file = () => path.join(app.getPath('userData'), 'reminders.json');
+const valid = (r) => r && r.id && r.at && r.text;
 
 function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(file(), 'utf8'));
-    const json = raw.sealed ? safeStorage.decryptString(Buffer.from(raw.sealed, 'base64')) : JSON.stringify(raw.list || []);
-    const parsed = JSON.parse(json);
-    list = Array.isArray(parsed) ? parsed.filter((r) => r && r.id && r.at && r.text) : [];
+    const parsed = raw.sealed ? JSON.parse(safeStorage.decryptString(Buffer.from(raw.sealed, 'base64'))) : raw;
+    // 1.9.0 saved a plain list of upcoming reminders.
+    const data = Array.isArray(parsed) ? { list: parsed } : parsed || {};
+    list = Array.isArray(data.list) ? data.list.filter(valid) : [];
+    history = Array.isArray(data.history) ? data.history.filter(valid) : [];
   } catch {
     list = [];
+    history = [];
   }
 }
 
 function save() {
   try {
-    const json = JSON.stringify(list);
-    const body = safeStorage.isEncryptionAvailable() ? { sealed: safeStorage.encryptString(json).toString('base64') } : { list };
+    const cutoff = new Date(Date.now() - HISTORY_DAYS * 864e5).toISOString();
+    history = history.filter((h) => (h.shownAt || h.at) >= cutoff).slice(-HISTORY_MAX);
+    const data = { list, history };
+    const body = safeStorage.isEncryptionAvailable() ? { sealed: safeStorage.encryptString(JSON.stringify(data)).toString('base64') } : data;
     fs.writeFileSync(file(), JSON.stringify(body), { mode: 0o600 });
   } catch {
     /* kept in memory until the next save */
@@ -40,6 +53,33 @@ function save() {
 }
 
 const sorted = () => [...list].sort((a, b) => a.at.localeCompare(b.at));
+
+// One repeat step after `start`, n times (in local time, so 9:00 stays 9:00; the 31st becomes the last day
+// of shorter months; "monthEnd" is always the last day: 28th, 29th, 30th or 31st).
+function stepFrom(start, unit, n) {
+  const d = new Date(start);
+  if (unit === 'monthEnd') return monthEnd(new Date(d.getFullYear(), d.getMonth() + n, 1, d.getHours(), d.getMinutes(), d.getSeconds()));
+  if (unit === 'day') d.setDate(d.getDate() + n);
+  else if (unit === 'week') d.setDate(d.getDate() + 7 * n);
+  else {
+    const months = unit === 'year' ? 12 * n : n;
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + months);
+    d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  }
+  return d;
+}
+
+/** The next time a repeating reminder is due after `now`. */
+function nextAt(r, now) {
+  const start = new Date(r.startAt || r.at);
+  for (let n = 1; n < 100000; n++) {
+    const d = stepFrom(start, r.repeat, n);
+    if (d > now) return d.toISOString();
+  }
+  return null;
+}
 
 function schedule() {
   clearTimeout(timer);
@@ -49,14 +89,26 @@ function schedule() {
   timer = setTimeout(fireDue, wait);
 }
 
-// Show every reminder whose time has come (including ones missed while the computer was off), then forget them.
+// Show every reminder whose time has come (including ones missed while the computer was off — a repeating one
+// shows once, not once for every time it was missed). One-off reminders then move to the history; repeating
+// ones move on to their next time.
 function fireDue() {
   const now = Date.now();
   const due = list.filter((r) => new Date(r.at) <= now);
   if (due.length) {
-    list = list.filter((r) => !due.includes(r));
+    for (const r of due) {
+      history.push({ id: `${r.id}@${r.at}`, reminderId: r.id, text: r.text, at: r.at, loginId: r.loginId, loginTitle: r.loginTitle, repeat: r.repeat || null, shownAt: new Date(now).toISOString() });
+      show(r, now - new Date(r.at) > 5 * 60 * 1000);
+    }
+    list = list
+      .map((r) => {
+        if (!due.includes(r)) return r;
+        if (!REPEATS.includes(r.repeat)) return null;
+        const at = nextAt(r, now);
+        return at ? { ...r, at } : null;
+      })
+      .filter(Boolean);
     save();
-    for (const r of due) show(r, now - new Date(r.at) > 5 * 60 * 1000);
     onFire(due);
   }
   schedule();
@@ -79,22 +131,26 @@ function init(handler) {
   fireDue();
 }
 
+/** Upcoming reminders (soonest first) and ones already shown (newest first). */
 function all() {
-  return sorted();
+  return { upcoming: sorted(), recent: [...history].sort((a, b) => (b.shownAt || b.at).localeCompare(a.shownAt || a.at)) };
 }
 
-/** Add one: { text, at (ISO date), loginId?, loginTitle? }. */
-function add({ text, at, loginId, loginTitle }) {
+/** Add one: { text, at (ISO date), repeat? ('day'|'week'|'month'|'year'), loginId?, loginTitle? }. */
+function add({ text, at, repeat, loginId, loginTitle }) {
   const clean = String(text || '').trim().replace(/\s+/g, ' ').slice(0, MAX_TEXT);
   if (!clean) throw new Error('Type what you want to be reminded about.');
-  const when = new Date(at);
+  let when = new Date(at);
   if (Number.isNaN(when.getTime())) throw new Error('Choose when to be reminded.');
+  if (repeat === 'monthEnd') when = monthEnd(when);
   if (when <= Date.now()) throw new Error('Choose a time in the future.');
   if (list.length >= MAX_REMINDERS) throw new Error('You have too many reminders. Cancel some first.');
   const r = {
     id: crypto.randomUUID(),
     text: clean,
     at: when.toISOString(),
+    startAt: when.toISOString(),
+    repeat: REPEATS.includes(repeat) ? repeat : null,
     loginId: loginId ? String(loginId) : null,
     loginTitle: loginTitle ? String(loginTitle).slice(0, 100) : null,
     createdAt: new Date().toISOString(),
@@ -105,17 +161,34 @@ function add({ text, at, loginId, loginTitle }) {
   return r;
 }
 
+/** Cancel an upcoming reminder, or remove one from the history. */
 function remove(id) {
   list = list.filter((r) => r.id !== id);
+  history = history.filter((h) => h.id !== id);
   save();
   schedule();
 }
 
-/** Keep the login name in a reminder current when the login is renamed. */
+function clearHistory() {
+  history = [];
+  save();
+}
+
+/** Keep the login name in reminders current when the login is renamed. */
 function loginChanged(id, title) {
   let changed = false;
-  for (const r of list) if (r.loginId === id && r.loginTitle !== title) (r.loginTitle = title), (changed = true);
+  for (const r of [...list, ...history]) if (r.loginId === id && r.loginTitle !== title) (r.loginTitle = title), (changed = true);
   if (changed) save();
 }
 
-module.exports = { init, all, add, remove, loginChanged, check: fireDue };
+/** A login was deleted: cancel its upcoming reminders. */
+function loginDeleted(id) {
+  const before = list.length;
+  list = list.filter((r) => r.loginId !== id);
+  if (list.length !== before) {
+    save();
+    schedule();
+  }
+}
+
+module.exports = { init, all, add, remove, clearHistory, loginChanged, loginDeleted, check: fireDue, _stepFrom: stepFrom };

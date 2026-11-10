@@ -1352,7 +1352,8 @@ function selectEntry(id) {
   notesView.classList.toggle('rich', !!rich);
   if (rich) notesView.innerHTML = rich; // already cleaned: only formatting tags survive
   else notesView.textContent = e.notes;
-  $('v-notes-field').classList.toggle('hidden', !e.notes);
+  $('v-notes-field').classList.toggle('hidden', !e.notes && !rich);
+  renderViewFiles(e);
   $('v-meta').textContent = `Last updated ${new Date(e.updatedAt).toLocaleString()}`;
   if (shownLoginId !== e.id) $('v-reminders').classList.add('hidden'); // until this login's reminders load
   shownLoginId = e.id;
@@ -1398,6 +1399,9 @@ function openEditor(entry) {
   $('e-url').value = entry ? entry.url : '';
   $('e-notes').innerHTML = (entry && RichNotes.richFor(entry)) || RichNotes.fromPlain(entry ? entry.notes : '');
   updateToolbar();
+  resetEditorReminders();
+  editorFiles = entry && entry.attachments ? entry.attachments.map((f) => ({ ...f })) : [];
+  renderEditorFiles();
   setEditorFolder(entry ? entry.folder || '' : '');
   closeFolderPicker();
   editingIcon = entry ? entry.icon || null : null;
@@ -1607,6 +1611,11 @@ notesEd.addEventListener('keydown', (e) => {
 
 // Pasting (from Word, Outlook, a web page…) keeps simple formatting and drops everything else.
 notesEd.addEventListener('paste', (e) => {
+  const pictures = [...e.clipboardData.files].filter(isPicture);
+  if (pictures.length) {
+    e.preventDefault();
+    return insertPictures(pictures);
+  }
   const html = e.clipboardData.getData('text/html');
   const text = e.clipboardData.getData('text/plain');
   e.preventDefault();
@@ -1619,8 +1628,20 @@ notesEd.addEventListener('dragstart', () => (draggingInNotes = true));
 notesEd.addEventListener('dragend', () => (draggingInNotes = false));
 notesEd.addEventListener('drop', (e) => {
   if (draggingInNotes) return;
+  const dropped = e.dataTransfer ? [...e.dataTransfer.files] : [];
+  if (dropped.length) {
+    // Pictures go into the notes where they're dropped; other files are attached to the login.
+    e.preventDefault();
+    const pos = document.caretRangeFromPoint(e.clientX, e.clientY);
+    if (pos && notesEd.contains(pos.startContainer)) notesRange = pos;
+    const pictures = dropped.filter(isPicture);
+    if (pictures.length) insertPictures(pictures);
+    const others = dropped.filter((f) => !isPicture(f));
+    if (others.length) addFiles(others);
+    return;
+  }
   const html = e.dataTransfer && e.dataTransfer.getData('text/html');
-  if ((e.dataTransfer && e.dataTransfer.files.length) || html) e.preventDefault();
+  if (html) e.preventDefault();
   if (html) {
     const pos = document.caretRangeFromPoint(e.clientX, e.clientY);
     if (pos) {
@@ -1630,6 +1651,178 @@ notesEd.addEventListener('drop', (e) => {
     document.execCommand('insertHTML', false, RichNotes.sanitize(html));
   }
 });
+
+// ---------- pictures in notes ----------
+// Made smaller (at most 1600 pixels across) and stored inside the note, encrypted with the rest of the vault.
+const isPicture = (f) => /^image\/(png|jpeg|gif|webp|bmp)$/.test(f.type);
+async function pictureDataUrl(file) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * scale));
+  c.height = Math.max(1, Math.round(bmp.height * scale));
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close();
+  let url = c.toDataURL('image/webp', 0.85);
+  if (url.length > 2.5e6) url = c.toDataURL('image/webp', 0.6);
+  return url;
+}
+async function insertPictures(files) {
+  for (const f of files) {
+    try {
+      const url = await pictureDataUrl(f);
+      focusNotes();
+      document.execCommand('insertHTML', false, `<img src="${url}" data-size="m" alt="">`);
+      rememberNotesSelection();
+    } catch {
+      toast(`“${f.name}” couldn’t be opened as a picture`);
+    }
+  }
+}
+$('tb-picture').addEventListener('click', () => {
+  rememberNotesSelection();
+  $('e-picture-input').click();
+});
+$('e-picture-input').addEventListener('change', () => {
+  const files = [...$('e-picture-input').files];
+  $('e-picture-input').value = '';
+  if (files.length) insertPictures(files);
+});
+// Click a picture in the notes: change its size, save it, or remove it.
+notesEd.addEventListener('click', (e) => {
+  const img = e.target.closest('img');
+  if (!img) return;
+  const r = document.createRange();
+  r.selectNode(img);
+  getSelection().removeAllRanges();
+  getSelection().addRange(r);
+  notesRange = r.cloneRange();
+  const size = img.getAttribute('data-size') || 'm';
+  const setSize = (s) => () => {
+    img.setAttribute('data-size', s);
+    notesEd.dispatchEvent(new Event('input'));
+  };
+  popupMenu(e.clientX, e.clientY, [
+    { label: 'Picture' },
+    { text: 'Small', selected: size === 's', run: setSize('s') },
+    { text: 'Medium', selected: size === 'm', run: setSize('m') },
+    { text: 'Full width', selected: size === 'l', run: setSize('l') },
+    '-',
+    { text: 'Save picture…', icon: ICON.out, run: () => savePicture(img) },
+    { text: 'Remove picture', icon: ICON.trash, danger: true, run: () => runNotes('delete') },
+  ]);
+});
+async function savePicture(img) {
+  const res = await window.api.savePicture(img.getAttribute('src'), (current() && current().title) || 'Picture');
+  if (res.ok) toast('Picture saved');
+  else if (res.error) toast(res.error);
+}
+// When viewing a login: click a picture to save it.
+$('v-notes').addEventListener('click', (e) => {
+  const img = e.target.closest('img');
+  if (img) popupMenu(e.clientX, e.clientY, [{ text: 'Save picture…', icon: ICON.out, run: () => savePicture(img) }]);
+});
+
+// ---------- files attached to a login ----------
+const MAX_FILE = 10 * 1024 * 1024;
+const MAX_LOGIN_FILES = 25 * 1024 * 1024;
+let editorFiles = []; // in the editor: { id, name, type, size, data? (new ones only) }
+const fileSize = (n) => (n < 1024 ? `${n} bytes` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+const FILE_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13H6Z"/><path d="M14 3v5h5"/></svg>';
+function fileRow(f, buttons) {
+  const li = document.createElement('li');
+  li.insertAdjacentHTML('afterbegin', FILE_ICON);
+  const body = Object.assign(document.createElement('div'), { className: 'file-body' });
+  body.append(
+    Object.assign(document.createElement('div'), { className: 'file-name', textContent: f.name, title: f.name }),
+    Object.assign(document.createElement('div'), { className: 'file-size', textContent: fileSize(f.size) + (f.data ? ' · new' : '') })
+  );
+  li.append(body);
+  for (const [text, run, cls] of buttons.filter(Boolean)) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'reminder-cancel' + (cls ? ' ' + cls : ''), textContent: text });
+    b.addEventListener('click', run);
+    li.append(b);
+  }
+  return li;
+}
+function renderEditorFiles() {
+  $('e-file-list').replaceChildren(
+    ...editorFiles.map((f) =>
+      fileRow(f, [
+        [
+          'Remove',
+          () => {
+            editorFiles = editorFiles.filter((x) => x !== f);
+            renderEditorFiles();
+          },
+        ],
+      ])
+    )
+  );
+  $('e-file-list').classList.toggle('hidden', !editorFiles.length);
+}
+const readBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+async function addFiles(files) {
+  for (const f of files) {
+    const total = editorFiles.reduce((n, x) => n + x.size, 0);
+    if (f.size > MAX_FILE) {
+      toast(`“${f.name}” is too big. Files can be up to 10 MB.`);
+      continue;
+    }
+    if (total + f.size > MAX_LOGIN_FILES) {
+      toast('The files on one login can add up to 25 MB at most.');
+      break;
+    }
+    try {
+      editorFiles.push({ id: 'new-' + Math.random().toString(36).slice(2), name: f.name, type: f.type, size: f.size, data: await readBase64(f) });
+    } catch {
+      toast(`“${f.name}” couldn’t be read`);
+    }
+  }
+  renderEditorFiles();
+}
+$('e-file-add').addEventListener('click', () => $('e-file-input').click());
+$('e-file-input').addEventListener('change', () => {
+  const files = [...$('e-file-input').files];
+  $('e-file-input').value = '';
+  if (files.length) addFiles(files);
+});
+// Everyday documents and pictures can be opened; anything else (e.g. programs) can only be saved.
+const OPENABLE = /\.(pdf|txt|csv|md|rtf|png|jpe?g|gif|webp|bmp|heic|tiff?|docx?|xlsx?|pptx?|odt|ods|odp|pages|numbers|key)$/i;
+function renderViewFiles(e) {
+  const files = e.attachments || [];
+  $('v-file-list').replaceChildren(
+    ...files.map((f) =>
+      fileRow(f, [
+        OPENABLE.test(f.name) && [
+          'Open',
+          async () => {
+            const res = await window.api.openFile(e.id, f.id);
+            if (res.notOpenable) toast('This kind of file can’t be opened from Password Vault. Use Save instead.');
+            else if (!res.ok && res.error) toast(res.error);
+          },
+        ],
+        [
+          'Save…',
+          async () => {
+            const res = await window.api.saveFile(e.id, f.id);
+            if (res.ok) toast(`Saved “${f.name}”`);
+            else if (res.error) toast(res.error);
+          },
+          'primary',
+        ],
+      ])
+    )
+  );
+  $('v-files-field').classList.toggle('hidden', !files.length);
+}
 
 // ---------- folder picker in the editor (styled to match the app) ----------
 function setEditorFolder(name) {
@@ -1897,12 +2090,16 @@ $('edit-pane').addEventListener('submit', async (e) => {
     url: $('e-url').value,
     notes: RichNotes.toText(notesHtml),
     notesHtml: RichNotes.hasFormatting(notesHtml) ? notesHtml : '',
+    // existing files are sent by id only (their contents stay in the vault); new ones carry their contents
+    attachments: editorFiles.map(({ id, name, type, size, data }) => (data ? { id, name, type, size, data } : { id, name, type, size })),
     folder: $('e-folder').value,
     icon: editingIcon, // null = automatic (matching logo or first letter)
   });
   if (saved && saved.locked) return; // master password changed on another computer; lock screen explains
+  if (saved && saved.ok === false) return toast(saved.error || 'Couldn’t save this login');
+  const added = await applyEditorReminders(saved);
   await loadData();
-  toast('Saved');
+  toast(added ? `Saved, with ${added} new reminder${added === 1 ? '' : 's'}` : 'Saved');
   selectEntry(saved.id);
 });
 
@@ -1910,7 +2107,9 @@ async function deleteLogin(e) {
   if (!e) return;
   // (The app's own pop-up, not the browser's confirm(): on Windows that one can leave text fields
   // unable to take typing until you switch windows.)
-  const sure = await ask({ title: `Delete “${e.title}”?`, text: 'This cannot be undone.', ok: 'Delete', danger: true, input: false });
+  const n = reminderCache.upcoming.filter((r) => r.loginId === e.id).length;
+  const also = n ? ` Its ${n} reminder${n === 1 ? '' : 's'} will be cancelled too.` : '';
+  const sure = await ask({ title: `Delete “${e.title}”?`, text: 'This cannot be undone.' + also, ok: 'Delete', danger: true, input: false });
   if (!sure) return;
   const res = await window.api.remove(e.id);
   if (res && res.locked) return;
@@ -1919,6 +2118,7 @@ async function deleteLogin(e) {
   if (wasOpen) selectedId = null;
   renderList();
   if (wasOpen) showPane(null);
+  renderReminders();
   toast(`Deleted “${e.title}”`);
 }
 $('delete-btn').addEventListener('click', () => deleteLogin(current()));
@@ -1932,27 +2132,169 @@ function editLogin(e) {
 
 // ---------- reminders: your own message, after a timer or at a date & time ----------
 let reminderFor = null; // the login a new reminder is about (or null)
+let reminderForEditor = false; // made inside the login editor: kept until the login is saved
 let reminderWhen = 'timer';
 let reminderUnit = 'hours';
+let reminderRepeat = '';
+let reminderCache = { upcoming: [], recent: [] };
+const REPEAT_TEXT = { day: 'Every day', week: 'Every week', month: 'Every month', monthEnd: 'Last day of every month', year: 'Every year' };
+const REPEAT_SHORT = { day: 'every day', week: 'every week', month: 'every month', monthEnd: 'on the last day of every month', year: 'every year' };
+const lastDayOf = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0, d.getHours(), d.getMinutes());
 const UNIT_MS = { minutes: 6e4, hours: 36e5, days: 864e5, weeks: 6048e5 };
 const pad2 = (n) => String(n).padStart(2, '0');
 const localInputValue = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 const whenText = (d) => new Date(d).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 function reminderAt() {
+  let d;
   if (reminderWhen === 'timer') {
     const n = Number($('reminder-amount').value);
     if (!Number.isFinite(n) || n <= 0 || n > 999) return null;
-    return new Date(Date.now() + n * UNIT_MS[reminderUnit]);
+    d = new Date(Date.now() + n * UNIT_MS[reminderUnit]);
+  } else {
+    const v = $('reminder-at').value;
+    d = v ? new Date(v) : null; // "YYYY-MM-DDTHH:MM" is read as local time
+    if (!d || Number.isNaN(d.getTime())) return null;
   }
-  const v = $('reminder-at').value;
-  const d = v ? new Date(v) : null; // "YYYY-MM-DDTHH:MM" is read as local time
-  return d && !Number.isNaN(d.getTime()) ? d : null;
+  // "Month end": the last day of that month (28th–31st), at the same time.
+  return reminderRepeat === 'monthEnd' ? lastDayOf(d) : d;
 }
 function updateReminderPreview() {
   const at = reminderAt();
-  $('reminder-when-text').textContent = at && at > Date.now() ? `You’ll get it on ${whenText(at)}.` : '';
+  const text = $('reminder-when-text');
+  text.parentElement.classList.toggle('warn', !!at && at <= Date.now());
+  if (!at) text.textContent = reminderWhen === 'timer' ? 'Choose how long, from 1 to 999.' : 'Choose a date and time.';
+  else if (at <= Date.now()) text.textContent = 'That time has already passed. Choose a time in the future.';
+  else text.textContent = `You’ll get it on ${whenText(at)}${reminderRepeat ? `, then ${REPEAT_SHORT[reminderRepeat]}` : ''}.`;
+  if (reminderWhen === 'date') renderCalendar();
 }
+function setReminderRepeat(v) {
+  reminderRepeat = v;
+  document.querySelectorAll('[data-repeat]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.repeat === v);
+    b.setAttribute('aria-checked', String(b.dataset.repeat === v));
+  });
+  const at = reminderAt();
+  if (at && reminderWhen === 'date') calMonth = new Date(at.getFullYear(), at.getMonth(), 1); // show the day it will be
+  updateReminderPreview();
+}
+
+// ---------- the reminder calendar (the page's own, styled like the rest of the app) ----------
+let calMonth = new Date(); // first day of the month shown
+let calPick = new Date(); // chosen day and time
+function setCalPick(d, showMonth = true) {
+  calPick = new Date(d);
+  if (showMonth) calMonth = new Date(calPick.getFullYear(), calPick.getMonth(), 1);
+  $('reminder-at').value = localInputValue(calPick);
+  const h = calPick.getHours();
+  $('time-hour').value = String(h % 12 || 12);
+  $('time-minute').value = pad2(calPick.getMinutes());
+  document.querySelectorAll('[data-ampm]').forEach((b) => {
+    const on = b.dataset.ampm === (h < 12 ? 'AM' : 'PM');
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+  updateReminderPreview();
+}
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+function renderCalendar() {
+  $('cal-title').textContent = calMonth.toLocaleDateString([], { month: 'long', year: 'numeric' });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const shown = reminderAt() || calPick; // with "Month end", the day it will really be
+  const first = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
+  const days = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < first.getDay(); i++) cells.push(Object.assign(document.createElement('span'), { className: 'cal-blank' }));
+  for (let day = 1; day <= days; day++) {
+    const date = new Date(calMonth.getFullYear(), calMonth.getMonth(), day);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cal-day';
+    b.textContent = day;
+    b.setAttribute('aria-label', date.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+    if (sameDay(date, today)) b.classList.add('today');
+    if (sameDay(date, shown)) {
+      b.classList.add('selected');
+      b.setAttribute('aria-selected', 'true');
+    }
+    if (day === days) b.classList.add('month-end');
+    if (date < today) b.disabled = true;
+    b.addEventListener('click', () => {
+      const d = new Date(date);
+      d.setHours(calPick.getHours(), calPick.getMinutes(), 0, 0);
+      setCalPick(d, false);
+    });
+    cells.push(b);
+  }
+  $('cal-days').replaceChildren(...cells);
+  // can't go back before this month
+  $('cal-prev').disabled = calMonth.getFullYear() === today.getFullYear() && calMonth.getMonth() <= today.getMonth();
+}
+(() => {
+  const names = [];
+  for (let i = 0; i < 7; i++) names.push(new Date(2026, 1, 1 + i).toLocaleDateString([], { weekday: 'short' }).slice(0, 2)); // 1 Feb 2026 was a Sunday
+  $('cal-weekdays').replaceChildren(...names.map((n) => Object.assign(document.createElement('span'), { textContent: n })));
+})();
+$('cal-prev').addEventListener('click', () => {
+  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1);
+  renderCalendar();
+});
+$('cal-next').addEventListener('click', () => {
+  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1);
+  renderCalendar();
+});
+function readTime() {
+  let h = Math.min(12, Math.max(1, parseInt($('time-hour').value, 10) || 12));
+  const m = Math.min(59, Math.max(0, parseInt($('time-minute').value, 10) || 0));
+  const pm = document.querySelector('[data-ampm].active')?.dataset.ampm === 'PM';
+  h = (h % 12) + (pm ? 12 : 0);
+  const d = new Date(calPick);
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+for (const id of ['time-hour', 'time-minute']) {
+  $(id).addEventListener('input', () => {
+    calPick = readTime();
+    $('reminder-at').value = localInputValue(calPick);
+    updateReminderPreview();
+  });
+  $(id).addEventListener('change', () => setCalPick(readTime(), false)); // tidy, e.g. "7" → "07"
+}
+document.querySelectorAll('[data-ampm]').forEach((b) =>
+  b.addEventListener('click', () => {
+    document.querySelectorAll('[data-ampm]').forEach((x) => x.classList.toggle('active', x === b));
+    setCalPick(readTime(), false);
+  })
+);
+document.querySelectorAll('[data-quick]').forEach((b) =>
+  b.addEventListener('click', () => {
+    const d = new Date();
+    if (b.dataset.quick === 'tomorrow') {
+      d.setDate(d.getDate() + 1);
+      d.setHours(9, 0, 0, 0);
+    } else if (b.dataset.quick === 'monday') {
+      d.setDate(d.getDate() + (((8 - d.getDay()) % 7) || 7));
+      d.setHours(9, 0, 0, 0);
+    } else {
+      // the last day of this month at the chosen time (or next month's, if that has passed)
+      d.setHours(calPick.getHours(), calPick.getMinutes(), 0, 0);
+      let end = lastDayOf(d);
+      if (end <= Date.now()) end = lastDayOf(new Date(d.getFullYear(), d.getMonth() + 1, 1, d.getHours(), d.getMinutes()));
+      d.setTime(end.getTime());
+    }
+    setCalPick(d);
+  })
+);
+// Timer: − / + beside the number.
+document.querySelectorAll('#reminder-timer [data-step]').forEach((b) =>
+  b.addEventListener('click', () => {
+    const n = Math.min(999, Math.max(1, (parseInt($('reminder-amount').value, 10) || 0) + Number(b.dataset.step)));
+    $('reminder-amount').value = String(n);
+    updateReminderPreview();
+  })
+);
+document.querySelectorAll('[data-repeat]').forEach((b) => b.addEventListener('click', () => setReminderRepeat(b.dataset.repeat)));
 function setReminderWhen(w) {
   reminderWhen = w;
   document.querySelectorAll('[data-when]').forEach((b) => {
@@ -1977,17 +2319,22 @@ document.querySelectorAll('[data-unit]').forEach((b) => b.addEventListener('clic
 $('reminder-amount').addEventListener('input', updateReminderPreview);
 $('reminder-at').addEventListener('input', updateReminderPreview);
 
-function openReminder(entry) {
+function openReminder(entry, forEditor = false) {
   closeMenu();
   reminderFor = entry || null;
-  $('reminder-title').textContent = entry ? `Remind me about “${entry.title}”` : 'New reminder';
+  reminderForEditor = forEditor;
+  $('reminder-title').textContent = entry && entry.title ? `Remind me about “${entry.title}”` : forEditor ? 'Remind me about this login' : 'New reminder';
+  $('reminder-sub').textContent = forEditor
+    ? 'Saved when you save this login. You’ll get a notification with this message, even if the window is closed.'
+    : 'You’ll get a notification with this message, even if the window is closed.';
+  setReminderRepeat('');
   $('reminder-text').value = '';
   $('reminder-error').textContent = '';
   $('reminder-amount').value = '1';
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(9, 0, 0, 0);
-  $('reminder-at').value = localInputValue(tomorrow);
+  setCalPick(tomorrow);
   setReminderUnit('hours');
   setReminderWhen('timer');
   show($('reminder-modal'));
@@ -1996,6 +2343,7 @@ function openReminder(entry) {
 function closeReminder() {
   hide($('reminder-modal'));
   reminderFor = null;
+  reminderForEditor = false;
 }
 $('reminder-cancel').addEventListener('click', closeReminder);
 $('reminder-modal').addEventListener('mousedown', (e) => {
@@ -2021,9 +2369,17 @@ $('reminder-form').addEventListener('submit', async (e) => {
   if (!text) return (err.textContent = 'Type what you want to be reminded about.');
   if (!at) return (err.textContent = reminderWhen === 'timer' ? 'Choose how long, from 1 to 999.' : 'Choose a date and time.');
   if (at <= Date.now()) return (err.textContent = 'Choose a time in the future.');
+  if (reminderForEditor) {
+    // Inside the login editor: keep it until the login is saved (a new login has no id yet).
+    editorReminders.pending.push({ id: 'new-' + Math.random().toString(36).slice(2), text, at: at.toISOString(), repeat: reminderRepeat || null });
+    closeReminder();
+    renderEditorReminders();
+    return;
+  }
   const res = await window.api.addReminder({
     text,
     at: at.toISOString(),
+    repeat: reminderRepeat || null,
     loginId: reminderFor ? reminderFor.id : null,
     loginTitle: reminderFor ? reminderFor.title : null,
   });
@@ -2031,41 +2387,115 @@ $('reminder-form').addEventListener('submit', async (e) => {
   if (!res.ok) return (err.textContent = res.error);
   closeReminder();
   await renderReminders();
-  toast(`Reminder set for ${whenText(res.reminder.at)}`);
+  toast(`Reminder set for ${whenText(res.reminder.at)}${res.reminder.repeat ? `, ${REPEAT_SHORT[res.reminder.repeat]}` : ''}`);
 });
 
-function reminderItem(r, showLogin) {
+// One reminder in a list. opts: { showLogin, note, button: 'Cancel' | 'Remove', onButton, open }
+function reminderItem(r, opts = {}) {
   const li = document.createElement('li');
   li.insertAdjacentHTML('afterbegin', ICON.bell);
   const body = Object.assign(document.createElement('div'), { className: 'reminder-body' });
+  const when = [opts.note || whenText(r.at)];
+  if (r.repeat) when.push(REPEAT_TEXT[r.repeat]);
+  if (opts.showLogin && r.loginTitle) when.push(r.loginTitle);
   body.append(
     Object.assign(document.createElement('div'), { className: 'reminder-text', textContent: r.text }),
-    Object.assign(document.createElement('div'), {
-      className: 'reminder-when',
-      textContent: whenText(r.at) + (showLogin && r.loginTitle ? ` · ${r.loginTitle}` : ''),
-    })
+    Object.assign(document.createElement('div'), { className: 'reminder-when', textContent: when.join(' · ') })
   );
-  const cancel = Object.assign(document.createElement('button'), { type: 'button', className: 'reminder-cancel', textContent: 'Cancel' });
-  cancel.addEventListener('click', async () => {
-    const res = await window.api.removeReminder(r.id);
-    if (res.locked) return;
-    await renderReminders();
-    toast('Reminder cancelled');
-  });
-  li.append(body, cancel);
+  // Settings: click a reminder about a login to open that login.
+  if (opts.open && r.loginId && entries.some((e) => e.id === r.loginId)) {
+    body.classList.add('clickable');
+    body.title = `Open “${r.loginTitle}”`;
+    body.addEventListener('click', () => selectEntry(r.loginId));
+  }
+  const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'reminder-cancel', textContent: opts.button || 'Cancel' });
+  btn.addEventListener('click', () => opts.onButton(r));
+  li.append(body, btn);
   return li;
 }
 
-// Upcoming reminders: all of them in Settings, and the open login's own on its page.
+async function cancelReminder(r) {
+  const res = await window.api.removeReminder(r.id);
+  if (res.locked) return;
+  await renderReminders();
+  toast('Reminder cancelled');
+}
+
+// Every reminder in Settings (upcoming, then ones already sent), and the open login's own on its page.
 async function renderReminders() {
-  const list = await window.api.reminders();
-  const all = $('s-reminder-list');
-  all.replaceChildren(...list.map((r) => reminderItem(r, true)));
-  all.classList.toggle('hidden', !list.length);
+  const data = await window.api.reminders();
+  reminderCache = { upcoming: data.upcoming || [], recent: data.recent || [] };
+  const { upcoming, recent } = reminderCache;
+  $('s-reminder-list').replaceChildren(...upcoming.map((r) => reminderItem(r, { showLogin: true, open: true, onButton: cancelReminder })));
+  $('s-reminder-list').classList.toggle('hidden', !upcoming.length);
+  $('s-reminder-empty').classList.toggle('hidden', !!upcoming.length);
+  $('s-recent-list').replaceChildren(
+    ...recent.map((r) =>
+      reminderItem(r, {
+        showLogin: true,
+        open: true,
+        note: `Sent ${whenText(r.shownAt || r.at)}`,
+        button: 'Remove',
+        onButton: async (x) => {
+          await window.api.removeReminder(x.id);
+          renderReminders();
+        },
+      })
+    )
+  );
+  $('s-recent-wrap').classList.toggle('hidden', !recent.length);
   const e = current();
-  const mine = e ? list.filter((r) => r.loginId === e.id) : [];
-  $('v-reminder-list').replaceChildren(...mine.map((r) => reminderItem(r, false)));
+  const mine = e ? upcoming.filter((r) => r.loginId === e.id) : [];
+  $('v-reminder-list').replaceChildren(...mine.map((r) => reminderItem(r, { onButton: cancelReminder })));
   $('v-reminders').classList.toggle('hidden', !mine.length);
+  if (!$('edit-pane').classList.contains('hidden')) renderEditorReminders();
+}
+$('s-recent-clear').addEventListener('click', async () => {
+  await window.api.clearReminderHistory();
+  renderReminders();
+});
+
+// ---------- reminders inside the login editor ----------
+// Added or cancelled here, they take effect when the login is saved (and are dropped if you cancel).
+let editorReminders = { pending: [], removed: new Set() };
+function resetEditorReminders() {
+  editorReminders = { pending: [], removed: new Set() };
+  renderEditorReminders();
+  renderReminders();
+}
+function renderEditorReminders() {
+  const existing = editingId ? reminderCache.upcoming.filter((r) => r.loginId === editingId && !editorReminders.removed.has(r.id)) : [];
+  const items = [
+    ...existing.map((r) => reminderItem(r, { onButton: (x) => (editorReminders.removed.add(x.id), renderEditorReminders()) })),
+    ...editorReminders.pending.map((r) =>
+      reminderItem(r, {
+        note: `${whenText(r.at)} · new`,
+        button: 'Remove',
+        onButton: (x) => {
+          editorReminders.pending = editorReminders.pending.filter((p) => p.id !== x.id);
+          renderEditorReminders();
+        },
+      })
+    ),
+  ];
+  $('e-reminder-list').replaceChildren(...items);
+  $('e-reminder-list').classList.toggle('hidden', !items.length);
+}
+$('e-reminder-add').addEventListener('click', () => openReminder({ id: editingId, title: $('e-title').value.trim() }, true));
+
+// After the login is saved: cancel the ones removed in the editor and add the new ones.
+async function applyEditorReminders(saved) {
+  let failed = 0;
+  for (const id of editorReminders.removed) await window.api.removeReminder(id);
+  for (const p of editorReminders.pending) {
+    const res = await window.api.addReminder({ text: p.text, at: p.at, repeat: p.repeat, loginId: saved.id, loginTitle: saved.title });
+    if (!res.ok) failed++;
+  }
+  const added = editorReminders.pending.length - failed;
+  editorReminders = { pending: [], removed: new Set() };
+  await renderReminders();
+  if (failed) toast(`${failed} reminder${failed === 1 ? '' : 's'} couldn’t be set (the time had passed)`);
+  return added;
 }
 $('remind-btn').addEventListener('click', () => openReminder(current()));
 $('reminder-new').addEventListener('click', () => openReminder(null));

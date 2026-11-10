@@ -174,7 +174,7 @@ function listNames(names) {
 }
 
 // "icon", "password and username", "name, website and notes"
-const FIELD_NAMES = { title: 'name', username: 'username', password: 'password', url: 'website', notes: 'notes', notesHtml: 'notes', icon: 'icon', folder: 'folder' };
+const FIELD_NAMES = { title: 'name', username: 'username', password: 'password', url: 'website', notes: 'notes', notesHtml: 'notes', attachments: 'files', icon: 'icon', folder: 'folder' };
 function fieldList(fields) {
   const names = [...new Set((fields || []).map((f) => FIELD_NAMES[f]).filter(Boolean))];
   if (names.length <= 1) return names[0] || '';
@@ -467,6 +467,16 @@ function createWindow() {
   win.webContents.on('did-finish-load', sendFullScreen);
 }
 
+// Decrypted copies of files opened from logins live here, and are deleted when the vault locks or the app quits.
+const openedFilesDir = () => path.join(app.getPath('temp'), 'Password Vault open files');
+function clearOpenedFiles() {
+  try {
+    fs.rmSync(openedFilesDir(), { recursive: true, force: true });
+  } catch {
+    /* a file still open in another app is removed next time */
+  }
+}
+
 // Right-click in a text box: spelling suggestions for an underlined word, plus Cut / Copy / Paste.
 function spellingMenu(contents) {
   contents.on('context-menu', (_e, p) => {
@@ -495,6 +505,7 @@ function lockVault(reason) {
     vault.lock();
     if (win && !win.isDestroyed()) win.webContents.send('vault:locked', reason);
   }
+  clearOpenedFiles();
   rebuildTrayMenu();
 }
 
@@ -732,17 +743,65 @@ function registerIpc() {
   });
 
   ipcMain.handle('vault:lock', () => lockVault('manual'));
-  ipcMain.handle('vault:list', () => (vault.isUnlocked() ? vault.list() : []));
+  ipcMain.handle('vault:list', () => (vault.isUnlocked() ? vault.listForDisplay() : []));
+  const forDisplay = (id) => vault.listForDisplay().find((e) => e.id === id);
   ipcMain.handle(
     'vault:save',
     guarded((_e, entry) => {
-      const saved = vault.upsert(entry);
-      reminders.loginChanged(saved.id, saved.title);
-      return saved;
+      try {
+        const saved = vault.upsert(entry);
+        reminders.loginChanged(saved.id, saved.title);
+        return forDisplay(saved.id);
+      } catch (err) {
+        if (err.code === 'PASSWORD_CHANGED_ELSEWHERE') throw err;
+        return { ok: false, error: err.message };
+      }
     })
   );
+
+  // ---------- files attached to logins, and pictures in notes ----------
+  // Opening a file needs a decrypted copy on disk: it goes in a private temporary folder that is emptied
+  // when the vault locks and when Password Vault quits. Only everyday document and picture types can be
+  // opened from here; anything else (e.g. programs) can only be saved somewhere you choose.
+  const OPENABLE = /\.(pdf|txt|csv|md|rtf|png|jpe?g|gif|webp|bmp|heic|tiff?|docx?|xlsx?|pptx?|odt|ods|odp|pages|numbers|key)$/i;
+  ipcMain.handle('file:save', async (_e, entryId, fileId) => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    const a = vault.attachment(String(entryId), String(fileId));
+    if (!a) return { ok: false, error: 'That file is no longer there.' };
+    const res = await dialog.showSaveDialog(win, { title: 'Save file', defaultPath: path.join(app.getPath('downloads'), a.name) });
+    if (res.canceled || !res.filePath) return { ok: false, cancelled: true };
+    fs.writeFileSync(res.filePath, Buffer.from(a.data, 'base64'));
+    return { ok: true, path: res.filePath };
+  });
+  ipcMain.handle('file:open', async (_e, entryId, fileId) => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    const a = vault.attachment(String(entryId), String(fileId));
+    if (!a) return { ok: false, error: 'That file is no longer there.' };
+    if (!OPENABLE.test(a.name)) return { ok: false, notOpenable: true };
+    const dir = path.join(openedFilesDir(), require('crypto').randomUUID());
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const file = path.join(dir, a.name);
+    fs.writeFileSync(file, Buffer.from(a.data, 'base64'), { mode: 0o600 });
+    const error = await shell.openPath(file);
+    return error ? { ok: false, error } : { ok: true };
+  });
+  ipcMain.handle('file:savePicture', async (_e, dataUrl, name) => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    const m = /^data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+    if (!m) return { ok: false, error: 'That picture can’t be saved.' };
+    const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+    const res = await dialog.showSaveDialog(win, { title: 'Save picture', defaultPath: path.join(app.getPath('downloads'), `${String(name || 'Picture').replace(/[\\/:*?"<>|]/g, '_')}.${ext}`) });
+    if (res.canceled || !res.filePath) return { ok: false, cancelled: true };
+    fs.writeFileSync(res.filePath, Buffer.from(m[2], 'base64'));
+    return { ok: true };
+  });
   // Reminders are only shown or changed while the vault is unlocked (they fire either way).
-  ipcMain.handle('reminders:list', () => (vault.isUnlocked() ? reminders.all() : []));
+  ipcMain.handle('reminders:list', () => (vault.isUnlocked() ? reminders.all() : { upcoming: [], recent: [] }));
+  ipcMain.handle('reminders:clearHistory', () => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    reminders.clearHistory();
+    return { ok: true };
+  });
   ipcMain.handle('reminders:add', (_e, r) => {
     if (!vault.isUnlocked()) return { ok: false, locked: true };
     try {
@@ -756,11 +815,17 @@ function registerIpc() {
     reminders.remove(String(id));
     return { ok: true };
   });
-  ipcMain.handle('vault:delete', guarded((_e, id) => vault.remove(id)));
+  ipcMain.handle(
+    'vault:delete',
+    guarded((_e, id) => {
+      vault.remove(id);
+      reminders.loginDeleted(id); // its upcoming reminders go with it
+    })
+  );
   ipcMain.handle('vault:folders', () => (vault.isUnlocked() ? vault.folders() : []));
   ipcMain.handle('vault:addFolder', guarded((_e, name, parent) => vault.addFolder(name, typeof parent === 'string' ? parent : '')));
   ipcMain.handle('vault:moveFolder', guarded((_e, name, parent) => vault.moveFolder(String(name), typeof parent === 'string' ? parent : '')));
-  ipcMain.handle('vault:moveToFolder', guarded((_e, id, folder) => vault.moveToFolder(id, folder)));
+  ipcMain.handle('vault:moveToFolder', guarded((_e, id, folder) => forDisplay(vault.moveToFolder(id, folder).id)));
   ipcMain.handle('vault:renameFolder', guarded((_e, from, to) => vault.renameFolder(from, to)));
   ipcMain.handle('vault:deleteFolder', guarded((_e, name) => vault.deleteFolder(name)));
 
@@ -885,6 +950,7 @@ if (!app.requestSingleInstanceLock()) {
     openVaultAt(settings.get('vaultPath') || localPath);
     loadNotifyKey();
     catchUpOnStart();
+    clearOpenedFiles(); // left over if the computer shut down while a file was open
     registerIpc();
     buildMenu();
     createWindow();
