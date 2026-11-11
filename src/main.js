@@ -581,6 +581,7 @@ function firstHideHint() {
 
 function createWindow() {
   win = new BrowserWindow({
+    ...(app.isPackaged ? {} : { icon: path.join(__dirname, '..', 'build', 'icon.png') }), // run from source: still the app's logo
     show: !(startedHidden && !windowCreatedBefore), // the first window stays hidden when started at sign-in
     width: 1000,
     height: 680,
@@ -1233,6 +1234,11 @@ if (!app.requestSingleInstanceLock()) {
   if (process.platform === 'win32') app.setAppUserModelId('com.matt.passwordvault');
 
   app.whenReady().then(() => {
+    // Started from source (npm start, a test script) instead of the installed app: Electron would show its own
+    // default logo, so use the app's logo in the Dock (Mac) the same way the installed app has it.
+    if (!app.isPackaged && process.platform === 'darwin' && app.dock) {
+      try { app.dock.setIcon(path.join(__dirname, '..', 'build', 'icon-mac.png')); } catch (e) { /* cosmetic only */ }
+    }
     const userData = app.getPath('userData');
     localPath = path.join(userData, 'vault.json');
     backupDir = path.join(userData, 'backups');

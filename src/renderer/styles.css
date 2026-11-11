@@ -832,7 +832,9 @@ button.reminder-edit:hover { background: rgba(197, 168, 130, 0.3); border-color:
   display: flex; align-items: center; justify-content: center;
 }
 .preview-body img { max-width: 100%; max-height: calc(100vh - 300px); object-fit: contain; display: block; }
-.preview-body iframe { width: 100%; height: calc(100vh - 300px); min-height: 320px; border: 0; background: #fff; }
+.preview-body.pdf { display: block; height: calc(100vh - 300px); min-height: 320px; padding: 12px; }
+.preview-body .pdf-page { display: block; width: 100%; height: auto; margin: 0 auto 12px; background: #fff; border-radius: 4px; box-shadow: 0 1px 4px rgba(49, 61, 42, 0.18); }
+.preview-body .pdf-page:last-child { margin-bottom: 0; }
 .preview-body pre {
   align-self: stretch; width: 100%; max-height: calc(100vh - 300px); overflow: auto; margin: 0; padding: 14px 16px;
   font: 12.5px/1.55 ui-monospace, Menlo, Consolas, monospace; color: var(--text-dark); white-space: pre-wrap; overflow-wrap: anywhere;

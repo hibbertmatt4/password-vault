@@ -2388,12 +2388,62 @@ function previewKind(name) {
   if (['txt', 'csv', 'md', 'log', 'json', 'xml', 'tsv'].includes(x)) return 'text';
   return null;
 }
-let previewUrl = null;
 let previewing = null; // { entryId, file }
+// PDFs are drawn page by page onto canvases (pdf.js) instead of Chromium's built-in viewer, which only filled the top
+// of the box and had its own scroll bar. The pages scroll inside .preview-body, which has the app's usual scroll bar.
+let pdfjsLoading = null;
+function loadPdfjs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (!pdfjsLoading) {
+    pdfjsLoading = new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = 'vendor/pdf.min.js';
+      sc.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      };
+      sc.onerror = () => reject(new Error('pdf.js failed to load'));
+      document.head.append(sc);
+    });
+    pdfjsLoading.catch(() => { pdfjsLoading = null; });
+  }
+  return pdfjsLoading;
+}
+let pdfDoc = null;
+let pdfRun = 0; // bumped whenever a preview opens or closes, so a half-drawn PDF stops
+async function drawPdf(bytes, body, run) {
+  try {
+    const pdfjs = await loadPdfjs();
+    const doc = await pdfjs.getDocument({ data: bytes }).promise;
+    if (run !== pdfRun) { doc.destroy(); return; }
+    pdfDoc = doc;
+    body.replaceChildren();
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(body.clientWidth - 24, 200);
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n);
+      if (run !== pdfRun) return;
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: (width / base.width) * ratio });
+      const canvas = document.createElement('canvas');
+      canvas.className = 'pdf-page';
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      body.append(canvas);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    }
+  } catch (err) {
+    if (run !== pdfRun) return;
+    body.classList.remove('pdf');
+    body.replaceChildren(Object.assign(document.createElement('div'), { className: 'preview-none', textContent: 'This PDF can’t be previewed here. Use Save to get it.' }));
+  }
+}
 function closePreview() {
-  if (previewUrl) URL.revokeObjectURL(previewUrl);
-  previewUrl = null;
+  pdfRun++;
+  if (pdfDoc) pdfDoc.destroy().catch(() => {});
+  pdfDoc = null;
   previewing = null;
+  $('preview-body').classList.remove('pdf');
   $('preview-body').replaceChildren();
   hide($('preview-modal'));
 }
@@ -2414,11 +2464,9 @@ async function previewFile(entry, f) {
     body.replaceChildren(img);
   } else if (kind === 'pdf') {
     const bytes = Uint8Array.from(atob(res.data), (c) => c.charCodeAt(0));
-    previewUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-    const frame = document.createElement('iframe');
-    frame.title = f.name;
-    frame.src = previewUrl;
-    body.replaceChildren(frame);
+    body.classList.add('pdf');
+    body.replaceChildren(Object.assign(document.createElement('div'), { className: 'preview-none', textContent: 'Opening…' }));
+    drawPdf(bytes, body, ++pdfRun);
   } else if (kind === 'text') {
     const bytes = Uint8Array.from(atob(res.data), (c) => c.charCodeAt(0));
     let text = new TextDecoder('utf-8').decode(bytes.subarray(0, 300000));
