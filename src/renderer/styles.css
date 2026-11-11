@@ -309,7 +309,8 @@ button.vb.copied svg { color: var(--green); }
   border-radius: var(--radius-small);
   word-break: break-all; user-select: text;
 }
-.notes { white-space: pre-wrap; word-break: break-word; }
+/* will-change: gives the notes their own layer; without it a Mac (Intel graphics) painted a tan band over them */
+.notes { white-space: pre-wrap; word-break: break-word; will-change: transform; }
 .meta-line { font-size: 12px; color: var(--text-muted); margin-top: -4px; }
 
 .strength { height: 5px; border-radius: 3px; background: rgba(49, 61, 42, 0.08); margin-top: 8px; overflow: hidden; }
@@ -677,6 +678,10 @@ button.tb-size { font-size: 12.5px; min-width: 84px; justify-content: space-betw
 .rich img[data-size='m'] { width: 60%; }
 .rich img[data-size='l'] { width: 100%; }
 .notes-editor img:hover { outline: 2px solid var(--tan); outline-offset: 2px; }
+/* words picked with Ctrl / ⌘ + double-click */
+::highlight(multi-view), ::highlight(multi-edit) { background-color: rgba(197, 168, 130, 0.65); color: #1a2213; }
+/* …and the one that's also the normal selection looks the same */
+#v-notes ::selection, #e-notes ::selection { background-color: rgba(197, 168, 130, 0.65); color: #1a2213; }
 /* a note (no username / password / website) */
 .is-note .login-only { display: none !important; }
 .notes-editor.tall { min-height: 280px; }
@@ -691,17 +696,32 @@ button.icon-pick .avatar.note-glyph svg { width: 17px; height: 17px; }
 .notes-editor [data-secret]::before { content: '\1F512\FE0E\00a0'; font-size: 0.85em; opacity: 0.7; }
 button.tb#tb-secret { padding: 0 9px 0 7px; }
 button.tb .tb-label { font-size: 12.5px; font-weight: 500; }
+/* A hidden part: a rounded chip with its button snug inside (equal space all round), clear space between chips.
+   The negative vertical margin keeps a chip from making its line taller than the lines around it. */
 .rich [data-secret].secret-hidden, .rich [data-secret].secret-open {
-  display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline;
-  padding: 1px 3px 1px 9px; border-radius: 8px; background: rgba(197, 168, 130, 0.22); border: 1px solid rgba(197, 168, 130, 0.5);
+  display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; box-sizing: border-box;
+  margin: 0 5px; padding: 1px 1px 1px 10px; border-radius: 9px; line-height: 1;
+  background: rgba(197, 168, 130, 0.22); border: 1px solid rgba(197, 168, 130, 0.5);
 }
-.rich [data-secret].secret-open { display: inline; padding: 1px 3px 1px 9px; background: rgba(197, 168, 130, 0.14); }
-.rich .secret-dots { letter-spacing: 0.1em; color: var(--green); user-select: none; }
-button.secret-toggle {
-  height: 22px; padding: 0 8px; margin-left: 6px; border-radius: 6px; font-size: 11.5px; font-weight: 500;
-  background: var(--green); border-color: var(--green); color: var(--cream); vertical-align: middle;
+/* lines that hold a chip are a little taller, so chips on neighbouring lines never touch */
+#v-notes:has([data-secret]) { line-height: 1.85; }
+#v-notes:has([data-secret]) [data-secret] { line-height: 1; }
+/* shown: the text, then Copy and Hide (a multi-line hidden part just grows taller) */
+.rich [data-secret].secret-open { display: inline-flex; align-items: center; max-width: 100%; border-radius: 9px; background: rgba(197, 168, 130, 0.14); }
+.rich [data-secret].secret-open .secret-body { line-height: 1.45; padding: 2px 0; overflow-wrap: anywhere; }
+.rich .secret-dots { letter-spacing: 0.1em; color: var(--green); user-select: none; line-height: 1; }
+button.secret-toggle, button.secret-copy {
+  flex: none; height: 18px; padding: 0 10px; margin: 0; border-radius: 7px; font-size: 11.5px; font-weight: 500; line-height: 1;
 }
+/* Copy is just the two-squares icon */
+button.secret-copy { width: 26px; padding: 0; }
+button.secret-copy svg { display: block; }
+button.secret-toggle { background: var(--green); border: 1px solid var(--green); color: var(--cream); }
 button.secret-toggle:hover { background: var(--green-light); border-color: var(--green-light); }
+button.secret-copy { background: #fff; border: 1px solid rgba(49, 61, 42, 0.18); color: var(--green); }
+button.secret-copy:hover { background: rgba(197, 168, 130, 0.25); border-color: var(--tan); }
+button.secret-copy.copied, button.secret-copy.copied:hover { background: rgba(197, 168, 130, 0.45); border-color: var(--tan); }
+.rich [data-secret].secret-open { align-self: center; }
 .rich table { border-collapse: collapse; margin: 6px 0; min-width: 40%; max-width: 100%; }
 .rich td { border: 1px solid rgba(49, 61, 42, 0.3); padding: 5px 8px; min-width: 48px; vertical-align: top; }
 .notes-editor.rich td:focus-within { outline: 2px solid rgba(197, 168, 130, 0.6); outline-offset: -2px; }

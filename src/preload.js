@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('api', {
   addReminder: (r) => ipcRenderer.invoke('reminders:add', r),
   removeReminder: (id) => ipcRenderer.invoke('reminders:remove', id),
   clearReminderHistory: () => ipcRenderer.invoke('reminders:clearHistory'),
+  // Right-click in the notes: tell the main process whether to add "Hide" / "Unhide" to its menu (sync, so it
+  // arrives before the menu is built), and receive the click on it.
+  setNotesContext: (state) => ipcRenderer.sendSync('notes:ctx', state),
+  onNotesAction: (cb) => ipcRenderer.on('notes:action', (_e, action) => cb(action)),
   missedReminders: () => ipcRenderer.invoke('reminders:missed'),
   dismissMissedReminders: () => ipcRenderer.invoke('reminders:dismissMissed'),
   onRemindersChanged: (cb) => ipcRenderer.on('reminders:changed', () => cb()),

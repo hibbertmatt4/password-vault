@@ -1465,10 +1465,17 @@ function selectEntry(id) {
   $('v-url-field').classList.toggle('hidden', !e.url);
   const rich = RichNotes.richFor(e);
   const notesView = $('v-notes');
+  viewMulti.clear(); // picked words belong to the login that was open
   notesView.classList.toggle('rich', !!rich);
   if (rich) {
     notesView.innerHTML = rich; // already cleaned: only formatting tags survive
-    RichNotes.maskSecrets(notesView); // hidden sections show as •••• until you press Show
+    // hidden sections show as •••• until you press Show; then each has a Copy button
+    RichNotes.maskSecrets(notesView, {
+      copy: async (text) => {
+        const secs = await window.api.copy(text);
+        toast(`Copied — clears in ${secs}s`);
+      },
+    });
   } else notesView.textContent = e.notes;
   $('v-notes-field').classList.toggle('hidden', !e.notes && !rich);
   renderViewFiles(e);
@@ -1841,11 +1848,29 @@ const secretAround = () => {
   const s = el && el.closest('[data-secret]');
   return s && notesEd.contains(s) ? s : null;
 };
-$('tb-secret').addEventListener('click', () => {
-  const inside = secretAround();
+// Wraps one selected range in a hidden section (done on the page directly: the browser's own insert would unwrap
+// a plain one-line selection again). Returns the new section, or null when there was nothing to hide.
+function hideRange(range) {
+  if (range.collapsed) return null;
+  const box = document.createElement('div');
+  box.appendChild(range.cloneContents());
+  const html = RichNotes.secretHtml(box.innerHTML);
+  if (!html) return null;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const mark = tpl.content.firstChild;
+  range.deleteContents();
+  range.insertNode(mark);
+  return mark;
+}
+// The Hide button and the right-click menu's Hide / Unhide. With several parts picked with Ctrl / ⌘ + double-click,
+// every one of them is hidden.
+function toggleSecret() {
+  const parts = editMulti.ranges().filter((r) => !r.collapsed && notesEd.contains(r.commonAncestorContainer));
+  const inside = parts.length < 2 ? secretAround() : null;
   focusNotes();
   const sel = getSelection();
-  if (!sel.rangeCount) return;
+  if (!sel.rangeCount && parts.length < 2) return;
   if (inside) {
     // un-hide: replace the section with what's inside it
     const kids = [...inside.childNodes];
@@ -1857,20 +1882,14 @@ $('tb-secret').addEventListener('click', () => {
     sel.addRange(r);
     notesEd.dispatchEvent(new Event('input'));
   } else {
-    const range = sel.getRangeAt(0);
-    if (range.collapsed) return toast('Select the text you want to hide first');
-    const box = document.createElement('div');
-    box.appendChild(range.cloneContents());
-    const html = RichNotes.secretHtml(box.innerHTML);
-    if (!html) return toast('Select the text you want to hide first');
-    // Done on the page directly: the browser's own insert would unwrap a plain one-line selection again.
-    const tpl = document.createElement('template');
-    tpl.innerHTML = html;
-    const mark = tpl.content.firstChild;
-    range.deleteContents();
-    range.insertNode(mark);
+    const todo = parts.length >= 2 ? parts : [sel.getRangeAt(0)];
+    let last = null;
+    // last one first, so the earlier ones aren't disturbed
+    for (const range of todo.slice().reverse()) last = hideRange(range) || last;
+    editMulti.clear();
+    if (!last) return toast('Select the text you want to hide first');
     const after = document.createRange();
-    after.setStartAfter(mark);
+    after.setStartAfter(last);
     after.collapse(true);
     sel.removeAllRanges();
     sel.addRange(after);
@@ -1878,6 +1897,88 @@ $('tb-secret').addEventListener('click', () => {
   }
   rememberNotesSelection();
   updateToolbar();
+}
+$('tb-secret').addEventListener('click', toggleSecret);
+
+// Right-click on selected text in the notes: the menu (made by the main process) gets a Hide / Unhide item too.
+notesEd.addEventListener('contextmenu', () => {
+  const sel = getSelection();
+  const hasSelection = (sel.rangeCount && !sel.isCollapsed) || editMulti.ranges().length > 1;
+  window.api.setNotesContext({ canHide: hasSelection || !!secretAround(), unhide: !hasSelection && !!secretAround() });
+});
+window.api.onNotesAction((action) => {
+  if (action === 'toggleSecret' && !$('edit-pane').classList.contains('hidden')) toggleSecret();
+});
+
+// ---------- Ctrl / ⌘ + double-click: pick several separate words ----------
+// Double-click a word with Ctrl (Windows) or ⌘ (Mac) held to add it, then do it again elsewhere (another line, another
+// part of the page). Copy (Ctrl/⌘+C) copies all of them, one per line; in the editor, Hide hides all of them.
+// (Browsers can't select in two places at once, so the picked parts are remembered here and painted with the page's
+// highlight feature.)
+function multiSelect(container, name, { keepNative }) {
+  let ranges = [];
+  const paint = () => {
+    if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined') return;
+    if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges));
+    else CSS.highlights.delete(name);
+  };
+  const clear = () => {
+    if (!ranges.length) return;
+    ranges = [];
+    paint();
+  };
+  const inside = (r) => container.contains(r.commonAncestorContainer);
+  const same = (a, b) => a.compareBoundaryPoints(Range.START_TO_START, b) === 0 && a.compareBoundaryPoints(Range.END_TO_END, b) === 0;
+  const sorted = () => ranges.slice().sort((a, b) => a.compareBoundaryPoints(Range.START_TO_START, b));
+  container.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (e.ctrlKey || e.metaKey) {
+      // keep what was already selected, the first time; the double-click then adds a word
+      const s = getSelection();
+      if (!ranges.length && s.rangeCount && !s.isCollapsed && inside(s.getRangeAt(0))) {
+        ranges.push(s.getRangeAt(0).cloneRange());
+        paint();
+      }
+    } else clear();
+  });
+  container.addEventListener('dblclick', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const s = getSelection();
+    if (s.isCollapsed) {
+      const pos = document.caretRangeFromPoint(e.clientX, e.clientY);
+      if (!pos || !inside(pos)) return;
+      s.removeAllRanges();
+      s.addRange(pos);
+      s.modify('move', 'backward', 'word');
+      s.modify('extend', 'forward', 'word');
+    }
+    if (!s.rangeCount || s.isCollapsed) return;
+    const r = s.getRangeAt(0).cloneRange();
+    if (!inside(r)) return;
+    if (!ranges.some((x) => same(x, r))) ranges.push(r);
+    paint();
+    if (!keepNative) s.removeAllRanges(); // the highlight shows them all alike
+  });
+  container.addEventListener('copy', (e) => {
+    if (ranges.length < 2 && !(ranges.length === 1 && !keepNative)) return;
+    const text = sorted().map((r) => r.toString().trim()).join('\n');
+    if (!text) return;
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && ranges.length && container.contains(document.activeElement) === keepNative) clear();
+  });
+  return { ranges: sorted, clear, copy: () => sorted().map((r) => r.toString().trim()).join('\n') };
+}
+const editMulti = multiSelect(notesEd, 'multi-edit', { keepNative: true });
+const viewMulti = multiSelect($('v-notes'), 'multi-view', { keepNative: true });
+// In a login's page, right-click the picked parts to copy them.
+$('v-notes').addEventListener('contextmenu', (e) => {
+  const n = viewMulti.ranges().length;
+  if (!n) return;
+  e.preventDefault();
+  popupMenu(e.clientX, e.clientY, [{ text: `Copy ${n === 1 ? 'the selected part' : `${n} selected parts`}`, icon: ICON.note, run: () => window.api.copy(viewMulti.copy()).then((secs) => toast(`Copied — clears in ${secs}s`)) }]);
 });
 
 // Click a picture in the notes: change its size, save it, or remove it.

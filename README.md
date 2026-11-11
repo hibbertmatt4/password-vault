@@ -17,6 +17,9 @@ An offline, encrypted password manager for Windows and Mac.
   - **Pasting:** text pasted from Word, Outlook or a web page keeps its bold, italics, underline, colours, sizes, lists and tables. Pictures, links and anything else are removed.
   - **Older versions:** the formatting syncs with everything else. A computer still on an older version shows the notes as plain text. If it edits them, the plain text wins.
 - **Hiding part of a note:** select text in the notes and click **Hide** in the toolbar. When you open the login, that part shows as •••••••• with a **Show** button (and **Hide** to cover it again), like a password, so sensitive details aren't on screen as soon as you click the login. While hidden, the text isn't even in the page. To un-hide it for good, put the cursor inside it while editing and click **Unhide**.
+  - **Copying a hidden part:** after you press **Show**, a **Copy** button appears beside it and copies everything in that part (all its lines). Then **Hide** covers it again.
+  - **Right-click:** select text in the notes and right-click, and the menu has **Hide (like a password)**; inside a hidden part it says **Unhide**.
+  - **Several at once:** hold **Ctrl** (Windows) or **⌘** (Mac) and double-click words in different places (different lines, even); all of them stay highlighted. In the editor, **Hide** (the button or the right-click menu) hides all of them; on a login's page, **Ctrl/⌘+C** copies them, one per line (or right-click → *Copy*). A normal click, or Esc, clears them.
   - **Older versions:** a computer on an older version shows the whole note without hiding anything.
 - **Notes (no password):** click **+ Add** and choose **Note** (also in a folder's **+** and right-click menus, and when right-clicking empty space in the sidebar). A note is just a name, a folder, and notes (formatting, hidden parts, pictures, files and reminders all work). It has no username, password or website.
 - **Pictures in notes:**

@@ -501,9 +501,17 @@ function clearOpenedFiles() {
 }
 
 // Right-click in a text box: spelling suggestions for an underlined word, plus Cut / Copy / Paste.
+let notesContext = null; // set by the page just before the menu opens, when the right-click was in the notes box
+ipcMain.on('notes:ctx', (e, state) => {
+  notesContext = { ...(state || {}), at: Date.now() };
+  e.returnValue = true;
+});
+
 function spellingMenu(contents) {
   contents.on('context-menu', (_e, p) => {
     if (!p.isEditable) return;
+    const hide = notesContext && Date.now() - notesContext.at < 1500 && notesContext.canHide ? notesContext : null;
+    notesContext = null;
     const items = [];
     if (p.misspelledWord) {
       for (const s of p.dictionarySuggestions.slice(0, 5)) items.push({ label: s, click: () => contents.replaceMisspelling(s) });
@@ -514,10 +522,15 @@ function spellingMenu(contents) {
     items.push(
       { role: 'cut', enabled: p.editFlags.canCut },
       { role: 'copy', enabled: p.editFlags.canCopy },
-      { role: 'paste', enabled: p.editFlags.canPaste },
-      { type: 'separator' },
-      { role: 'selectAll' }
+      { role: 'paste', enabled: p.editFlags.canPaste }
     );
+    if (hide) {
+      items.push(
+        { type: 'separator' },
+        { label: hide.unhide ? 'Unhide' : 'Hide (like a password)', click: () => contents.send('notes:action', 'toggleSecret') }
+      );
+    }
+    items.push({ type: 'separator' }, { role: 'selectAll' });
     Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(contents) });
   });
 }

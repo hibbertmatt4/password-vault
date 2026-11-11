@@ -309,12 +309,36 @@
    * Turn the hidden sections of notes shown on screen into "•••• Show" chips. While hidden, the text isn't
    * in the page at all; Show puts it back, Hide takes it away again.
    */
-  function maskSecrets(root) {
+  function maskSecrets(root, options = {}) {
     for (const s of [...root.querySelectorAll('[data-secret]')]) {
       const real = s.innerHTML;
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = 'secret-toggle';
+      // While shown, a Copy button copies everything in this hidden part (all its lines).
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'secret-copy';
+      // just the two-squares icon (a tick for a moment after copying), to keep the chip small
+      const COPY_ICON =
+        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>';
+      const TICK_ICON =
+        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+      copy.innerHTML = COPY_ICON; // fixed, trusted markup
+      copy.setAttribute('aria-label', 'Copy this hidden part');
+      copy.title = 'Copy';
+      let copiedTimer = null;
+      copy.addEventListener('click', async () => {
+        if (!options.copy) return;
+        await options.copy(toText(real));
+        clearTimeout(copiedTimer);
+        copy.innerHTML = TICK_ICON;
+        copy.classList.add('copied');
+        copiedTimer = setTimeout(() => {
+          copy.innerHTML = COPY_ICON;
+          copy.classList.remove('copied');
+        }, 1400);
+      });
       const body = document.createElement('span');
       const render = (shown) => {
         s.classList.toggle('secret-open', shown);
@@ -324,7 +348,7 @@
         body.className = shown ? 'secret-body' : 'secret-dots';
         toggle.textContent = shown ? 'Hide' : 'Show';
         toggle.setAttribute('aria-label', shown ? 'Hide this part of the notes' : 'Show the hidden part of the notes');
-        s.replaceChildren(body, toggle);
+        s.replaceChildren(...(shown ? [body, copy, toggle] : [body, toggle]));
       };
       toggle.addEventListener('click', () => render(!s.classList.contains('secret-open')));
       render(false);
