@@ -165,11 +165,17 @@ async function updateBioButton(mayAutoPrompt) {
   show($('bio-btn'));
   // When the app first opens, ask straight away so you can just touch the sensor —
   // but not while it's starting up hidden in the tray (it asks when you open the window instead).
-  if (mayAutoPrompt && (await window.api.isWindowVisible())) bioUnlock();
+  if (mayAutoPrompt && !justClosed() && (await window.api.isWindowVisible())) bioUnlock();
 }
+
+// Closing / quitting locks the vault while the window is still on its way out (a Mac leaves full screen first):
+// don't pop Touch ID up for that.
+let closedLockAt = 0;
+const justClosed = () => Date.now() - closedLockAt < 4000;
 
 // Opened from the tray, a notification or the Dock: offer Touch ID / Windows Hello right away.
 window.api.onShown(() => {
+  if (justClosed()) return;
   if (!$('lock-screen').classList.contains('hidden') && !creating && !bioBusy) updateBioButton(true);
 });
 
@@ -3381,6 +3387,7 @@ $('settings-pane').addEventListener('submit', async (e) => {
 $('lock-btn').addEventListener('click', () => window.api.lock());
 
 window.api.onLocked((reason) => {
+  if (reason === 'closed') closedLockAt = Date.now();
   closeReminder();
   const messages = {
     idle: 'Locked after 5 minutes of inactivity.',
