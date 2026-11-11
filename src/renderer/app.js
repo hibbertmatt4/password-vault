@@ -1392,6 +1392,7 @@ function entryRow(entry, inFolder) {
     li.style.setProperty('--depth', depthOf(entry.folder));
   }
   li.dataset.folder = entry.folder || '';
+  li.dataset.id = entry.id;
   li.draggable = true;
   const meta = document.createElement('div');
   meta.className = 'meta';
@@ -2351,16 +2352,18 @@ function renderViewFiles(e) {
   $('v-file-list').replaceChildren(
     ...files.map((f) =>
       fileRow(f, [
-        OPENABLE.test(f.name) && [
-          'Open',
-          async () => {
-            const res = await window.api.openFile(e.id, f.id);
-            if (res.notOpenable) toast('This kind of file can’t be opened from Password Vault. Use Save instead.');
-            else if (!res.ok && res.error) toast(res.error);
-          },
-        ],
+        previewKind(f.name) && ['Preview', () => previewFile(e, f)],
+        !previewKind(f.name) &&
+          OPENABLE.test(f.name) && [
+            'Open',
+            async () => {
+              const res = await window.api.openFile(e.id, f.id);
+              if (res.notOpenable) toast('This kind of file can’t be opened from Password Vault. Use Save instead.');
+              else if (!res.ok && res.error) toast(res.error);
+            },
+          ],
         [
-          'Save…',
+          'Save',
           async () => {
             const res = await window.api.saveFile(e.id, f.id);
             if (res.ok) toast(`Saved “${f.name}”`);
@@ -2373,6 +2376,189 @@ function renderViewFiles(e) {
   );
   $('v-files-field').classList.toggle('hidden', !files.length);
 }
+
+// ---------- previewing a file inside the app ----------
+const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+function previewKind(name) {
+  const ext = (/\.([a-z0-9]+)$/i.exec(name) || [])[1];
+  if (!ext) return null;
+  const x = ext.toLowerCase();
+  if (IMAGE_TYPES[x]) return 'image';
+  if (x === 'pdf') return 'pdf';
+  if (['txt', 'csv', 'md', 'log', 'json', 'xml', 'tsv'].includes(x)) return 'text';
+  return null;
+}
+let previewUrl = null;
+let previewing = null; // { entryId, file }
+function closePreview() {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = null;
+  previewing = null;
+  $('preview-body').replaceChildren();
+  hide($('preview-modal'));
+}
+async function previewFile(entry, f) {
+  const res = await window.api.getFile(entry.id, f.id);
+  if (!res || !res.ok) return res && res.error ? toast(res.error) : undefined;
+  closePreview();
+  previewing = { entryId: entry.id, file: f };
+  $('preview-title').textContent = f.name;
+  $('preview-sub').textContent = `${fileSize(f.size)} · attached to “${entry.title}”`;
+  const body = $('preview-body');
+  const kind = previewKind(f.name);
+  if (kind === 'image') {
+    const ext = /\.([a-z0-9]+)$/i.exec(f.name)[1].toLowerCase();
+    const img = document.createElement('img');
+    img.alt = f.name;
+    img.src = `data:${IMAGE_TYPES[ext]};base64,${res.data}`;
+    body.replaceChildren(img);
+  } else if (kind === 'pdf') {
+    const bytes = Uint8Array.from(atob(res.data), (c) => c.charCodeAt(0));
+    previewUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const frame = document.createElement('iframe');
+    frame.title = f.name;
+    frame.src = previewUrl;
+    body.replaceChildren(frame);
+  } else if (kind === 'text') {
+    const bytes = Uint8Array.from(atob(res.data), (c) => c.charCodeAt(0));
+    let text = new TextDecoder('utf-8').decode(bytes.subarray(0, 300000));
+    if (bytes.length > 300000) text += '\n\n… (the rest is left out of the preview; use Save to get the whole file)';
+    const pre = document.createElement('pre');
+    pre.textContent = text;
+    body.replaceChildren(pre);
+  } else {
+    body.replaceChildren(Object.assign(document.createElement('div'), { className: 'preview-none', textContent: 'This kind of file can’t be previewed. Use Save to get it.' }));
+  }
+  show($('preview-modal'));
+  $('preview-close').focus();
+}
+$('preview-close').addEventListener('click', closePreview);
+$('preview-modal').addEventListener('mousedown', (e) => {
+  if (e.target === $('preview-modal')) closePreview();
+});
+$('preview-save').addEventListener('click', async () => {
+  if (!previewing) return;
+  const { entryId, file } = previewing;
+  const res = await window.api.saveFile(entryId, file.id);
+  if (res.ok) toast(`Saved “${file.name}”`);
+  else if (res.error) toast(res.error);
+});
+
+// ---------- dragging files into the app ----------
+// Anywhere in the window: a file dropped while a login is open is added to it (no need to press Edit). Dropped on a
+// login in the sidebar it goes to that login. While editing, it joins the files that are saved with the login.
+const MAX_FILES_PER_LOGIN = 20;
+async function attachToEntry(id, files) {
+  const e = entries.find((x) => x.id === id);
+  if (!e) return;
+  const existing = (e.attachments || []).map(({ id: fid, name, type, size }) => ({ id: fid, name, type, size }));
+  let total = existing.reduce((n, x) => n + x.size, 0);
+  const added = [];
+  for (const f of files) {
+    if (existing.length + added.length >= MAX_FILES_PER_LOGIN) {
+      toast(`A login can hold up to ${MAX_FILES_PER_LOGIN} files.`);
+      break;
+    }
+    if (f.size > MAX_FILE) {
+      toast(`“${f.name}” is too big. Files can be up to 10 MB.`);
+      continue;
+    }
+    if (total + f.size > MAX_LOGIN_FILES) {
+      toast('The files on one login can add up to 25 MB at most.');
+      break;
+    }
+    try {
+      added.push({ id: 'new-' + Math.random().toString(36).slice(2), name: f.name, type: f.type, size: f.size, data: await readBase64(f) });
+      total += f.size;
+    } catch {
+      toast(`“${f.name}” couldn’t be read`);
+    }
+  }
+  if (!added.length) return;
+  const res = await window.api.save({ ...e, attachments: [...existing, ...added] });
+  if (res && res.locked) return;
+  if (res && res.ok === false) return toast(res.error || 'Couldn’t add the file');
+  await loadData();
+  if (viewingLogin(id)) selectEntry(id);
+  toast(added.length === 1 ? `Added “${added[0].name}” to “${e.title}”` : `Added ${added.length} files to “${e.title}”`);
+}
+
+const dragHasFiles = (e) => !draggingInNotes && !draggingId && !draggingFolder && e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+const appOpen = () => !$('app-screen').classList.contains('hidden');
+// What a file dropped at `el` would do: { kind: 'login', id } | { kind: 'folder', name } | { kind: 'editor' } | { kind: 'none' }
+function fileDropTarget(el) {
+  if (!appOpen()) return { kind: 'none' };
+  const row = el && el.closest ? el.closest('#entry-list li') : null;
+  if (row && row.classList.contains('folder-head')) return { kind: 'folder', name: row.dataset.folder, row };
+  if (row && row.dataset.id) return { kind: 'login', id: row.dataset.id, row };
+  if (!$('edit-pane').classList.contains('hidden')) return { kind: 'editor' };
+  if (!$('view-pane').classList.contains('hidden') && selectedId) return { kind: 'login', id: selectedId };
+  return { kind: 'none' };
+}
+let springTimer = null;
+let springFolder = null;
+function clearFileDropMarks() {
+  document.querySelectorAll('#entry-list .file-drop').forEach((x) => x.classList.remove('file-drop'));
+  clearTimeout(springTimer);
+  springTimer = null;
+  springFolder = null;
+}
+function endFileDrag() {
+  clearFileDropMarks();
+  hide($('drop-overlay'));
+}
+function describeFileDrop(t) {
+  const title = (id) => (entries.find((x) => x.id === id) || {}).title || 'this login';
+  if (t.kind === 'login') return `Drop to add the file to “${title(t.id)}”`;
+  if (t.kind === 'editor') return 'Drop to attach the file to this login';
+  if (t.kind === 'folder') return 'Hold here to open the folder, then drop on a login';
+  return 'Drop it on a login in the list to add it there';
+}
+document.addEventListener('dragover', (e) => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault(); // (otherwise the window would try to open the file)
+  if (!appOpen()) return;
+  const t = fileDropTarget(e.target);
+  e.dataTransfer.dropEffect = t.kind === 'none' || t.kind === 'folder' ? 'none' : 'copy';
+  $('drop-label').textContent = describeFileDrop(t);
+  show($('drop-overlay'));
+  document.querySelectorAll('#entry-list .file-drop').forEach((x) => x !== t.row && x.classList.remove('file-drop'));
+  if (t.row && t.kind === 'login') t.row.classList.add('file-drop');
+  if (t.kind === 'folder' && collapsedFolders.has(t.name)) {
+    if (springFolder !== t.name) {
+      clearTimeout(springTimer);
+      springFolder = t.name;
+      springTimer = setTimeout(() => {
+        collapsedFolders.delete(t.name);
+        saveCollapsed();
+        renderList();
+        springFolder = null;
+      }, 600);
+    }
+  } else if (t.kind !== 'folder') {
+    clearTimeout(springTimer);
+    springFolder = null;
+  }
+});
+document.addEventListener('dragleave', (e) => {
+  if (!e.relatedTarget) endFileDrag();
+});
+document.addEventListener('dragend', endFileDrag);
+document.addEventListener('drop', (e) => {
+  const files = e.dataTransfer ? [...e.dataTransfer.files] : [];
+  if (!files.length || draggingInNotes) return;
+  const handledByNotes = e.defaultPrevented && notesEd.contains(e.target); // the notes took it (pictures go in the text)
+  e.preventDefault();
+  endFileDrag();
+  if (handledByNotes) return;
+  const t = fileDropTarget(e.target);
+  if (t.kind === 'editor') addFiles(files);
+  else if (t.kind === 'login') {
+    if (!$('edit-pane').classList.contains('hidden') && editingId === t.id) addFiles(files);
+    else attachToEntry(t.id, files);
+  } else if (t.kind === 'folder') toast('Drop it on a login inside the folder to add the file there.');
+  else if (appOpen()) toast('Drop it on a login in the list to add the file there.');
+});
 
 // ---------- folder picker in the editor (styled to match the app) ----------
 function setEditorFolder(name) {
@@ -3389,6 +3575,8 @@ $('lock-btn').addEventListener('click', () => window.api.lock());
 window.api.onLocked((reason) => {
   if (reason === 'closed') closedLockAt = Date.now();
   closeReminder();
+  closePreview();
+  endFileDrag();
   const messages = {
     idle: 'Locked after 5 minutes of inactivity.',
     system: 'Locked because your computer was locked or went to sleep.',
@@ -3567,6 +3755,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('table-picker').classList.contains('hidden')) return closeTablePicker();
   if (e.key === 'Escape' && !$('folder-menu').classList.contains('hidden')) return closeFolderPicker();
   if (e.key === 'Escape' && !$('ask-modal').classList.contains('hidden')) return askCancel && askCancel();
+  if (e.key === 'Escape' && !$('preview-modal').classList.contains('hidden')) return closePreview();
   if (e.key === 'Escape' && !$('icon-modal').classList.contains('hidden')) return hide($('icon-modal'));
   if (e.key === 'Escape' && syncMode) return closeSyncModal();
   if (e.key === 'Escape' && !$('bio-modal').classList.contains('hidden')) return closeBioModal();

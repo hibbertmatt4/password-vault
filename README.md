@@ -32,8 +32,12 @@ An offline, encrypted password manager for Windows and Mac.
   - **Changing them:** click a picture to make it **Small**, **Medium** or **Full width**, save it, or remove it.
   - **Viewing a login:** click a picture there to save it.
 - **Files on a login:** in the editor, **Files → Attach a file** (or drop non-picture files onto the notes) adds PDFs, documents, scans or anything else.
-  - **Limits:** up to 10 MB each and 25 MB per login. Every file is encrypted inside your vault and syncs with it.
-  - **On the login's page:** each file has **Save…**, and everyday documents and pictures also have **Open**.
+  - **Drag a file in from anywhere:** drag a file from your computer over the window and a dashed "Drop to add the file…" frame appears.
+    - Drop it on an open login's page and it's added straight away (no need to press Edit).
+    - Drop it on a login in the sidebar to add it to that login. Hover over a closed folder for a moment and it opens, so you can reach the login inside.
+    - While editing a login, it joins the files that are saved with it.
+  - **Limits:** up to 20 files per login, 10 MB each and 25 MB per login. Every file is encrypted inside your vault and syncs with it.
+  - **On the login's page:** each file has **Save**. Pictures, PDFs and text files (txt, csv, md, json…) have **Preview**, which shows them inside the app without writing anything to disk. Other everyday documents have **Open**.
   - **Opening a file:** this puts a temporary decrypted copy in a private folder that is deleted when the vault locks or Password Vault quits.
   - **Programs** and other unusual file types can only be saved, never opened from the app.
   - **Older versions:** a computer still on an older version keeps the files but doesn't show them, and shows notes without pictures.

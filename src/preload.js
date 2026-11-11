@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
   deleteFolder: (name) => ipcRenderer.invoke('vault:deleteFolder', name),
   saveFile: (entryId, fileId) => ipcRenderer.invoke('file:save', entryId, fileId),
   openFile: (entryId, fileId) => ipcRenderer.invoke('file:open', entryId, fileId),
+  getFile: (entryId, fileId) => ipcRenderer.invoke('file:get', entryId, fileId),
   savePicture: (dataUrl, name) => ipcRenderer.invoke('file:savePicture', dataUrl, name),
   changeMaster: (current, next) => ipcRenderer.invoke('vault:changeMaster', current, next),
   generate: (opts) => ipcRenderer.invoke('generate', opts),

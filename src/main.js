@@ -1022,6 +1022,13 @@ function registerIpc() {
     fs.writeFileSync(res.filePath, Buffer.from(a.data, 'base64'));
     return { ok: true, path: res.filePath };
   });
+  // The contents, for the preview inside the app (nothing is written to disk).
+  ipcMain.handle('file:get', (_e, entryId, fileId) => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    const a = vault.attachment(String(entryId), String(fileId));
+    if (!a) return { ok: false, error: 'That file is no longer there.' };
+    return { ok: true, name: a.name, type: a.type, size: a.size, data: a.data };
+  });
   ipcMain.handle('file:open', async (_e, entryId, fileId) => {
     if (!vault.isUnlocked()) return { ok: false, locked: true };
     const a = vault.attachment(String(entryId), String(fileId));

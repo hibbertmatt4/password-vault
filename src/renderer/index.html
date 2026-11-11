@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>Password Vault</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -655,6 +655,22 @@
       </div>
     </form>
   </div>
+
+  <!-- Preview of an attached file -->
+  <div id="preview-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+    <div class="modal preview-modal">
+      <h3 id="preview-title" class="modal-title"></h3>
+      <p id="preview-sub" class="modal-sub"></p>
+      <div id="preview-body" class="preview-body"></div>
+      <div class="modal-actions">
+        <button type="button" id="preview-save">Save</button>
+        <button type="button" id="preview-close" class="primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shown while a file is dragged over the window -->
+  <div id="drop-overlay" class="hidden" aria-hidden="true"><div id="drop-label" class="drop-label"></div></div>
 
   <!-- Icon picker: brand logos, emoji, your own image, or the first letter -->
   <div id="icon-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="icon-modal-title">
