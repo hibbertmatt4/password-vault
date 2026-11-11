@@ -92,6 +92,8 @@ const BADGES = [
 // More business, shop and service names that Simple Icons doesn't carry. Same lettered badges. (Colours are
 // close approximations; use Upload for the exact logo.)
 BADGES.push(
+  // our own logos (the pictures live in scripts/custom-logos, see make-custom-logos.js)
+  ['spendoza', 'Spendoza', '313D2A', 'S'],
   // business & company formation
   ['amazonseller', 'Amazon Seller', 'FF9900', 'a', ['sellercentral']],
   ['delawaregov', 'Delaware.gov', '1D4F91', 'DE', ['delaware']],
@@ -239,6 +241,11 @@ try {
   logos = JSON.parse(fs.readFileSync(path.join(__dirname, 'brand-logos.json'), 'utf8'));
 } catch {
   /* none fetched yet: badges only */
+}
+try {
+  Object.assign(logos, JSON.parse(fs.readFileSync(path.join(__dirname, 'custom-logos.json'), 'utf8'))); // (made by make-custom-logos.js)
+} catch {
+  /* none made yet */
 }
 const NOT_RIGHT = new Set(['ibm']);
 let pictures = 0;

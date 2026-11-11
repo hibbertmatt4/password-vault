@@ -710,7 +710,6 @@
         <div class="upload-area">
           <div id="upload-preview" class="avatar-slot big"></div>
           <div>
-            <button type="button" id="upload-btn" class="primary">Choose an image…</button>
             <p class="hint">PNG, JPG or WebP. It's cropped to a square, made small, and stored encrypted inside your vault.</p>
             <p id="upload-error" class="error"></p>
           </div>
@@ -723,13 +722,14 @@
           <div id="letter-preview" class="avatar-slot big"></div>
           <div>
             <p class="hint">Show the first letter of the name, like before.</p>
-            <button type="button" id="letter-btn" class="primary">Use the letter</button>
           </div>
         </div>
       </div>
 
       <div class="modal-actions">
         <button type="button" id="icon-cancel">Cancel</button>
+        <button type="button" id="upload-btn" class="primary hidden">Choose an image…</button>
+        <button type="button" id="letter-btn" class="primary hidden">Use the letter</button>
       </div>
     </div>
   </div>

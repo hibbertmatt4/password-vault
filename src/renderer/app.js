@@ -1276,7 +1276,7 @@ function addPassword(folder) {
   renderList();
   openEditor(null);
   setEditorFolder(folder || '');
-  if (!$('e-password').value) generateInto();
+  // (the password starts blank: click "Generate new" for one)
 }
 
 function addNote(folder) {
@@ -1615,6 +1615,7 @@ document.querySelector('main.detail').addEventListener('click', (e) => {
 
 let shownLoginId = null;
 function selectEntry(id) {
+  autosaveOnLeave();
   selectedId = id;
   renderList();
   const e = current();
@@ -1781,6 +1782,7 @@ $('search').addEventListener('input', renderList);
 // ---------- add / edit ----------
 let editingKind = 'login'; // 'login' (username + password) or 'note' (just a title and notes)
 function openEditor(entry, kind) {
+  autosaveOnLeave(); // (an editor that's already open keeps what was typed)
   editingId = entry ? entry.id : null;
   editingKind = (entry ? entry.kind : kind) === 'note' ? 'note' : 'login';
   const isNote = editingKind === 'note';
@@ -2795,6 +2797,9 @@ const EMOJIS = '🔐 🔑 🗝️ 🛡️ 🔒 💳 🏦 💰 💵 🪙 📈 �
 function iconTab(name) {
   document.querySelectorAll('.icon-tabs .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.icon-tab').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== name));
+  // the action buttons for the Upload and Letter tabs sit beside Cancel
+  $('upload-btn').classList.toggle('hidden', name !== 'upload');
+  $('letter-btn').classList.toggle('hidden', name !== 'letter');
   if (name === 'logos') $('logo-search').focus();
   if (name === 'emoji') $('emoji-input').focus();
 }
@@ -2917,7 +2922,10 @@ $('add-btn').addEventListener('click', () => {
   addMenu(r.left, r.bottom + 4, '');
 });
 $('edit-btn').addEventListener('click', () => openEditor(current()));
-$('cancel-btn').addEventListener('click', () => (selectedId ? selectEntry(selectedId) : showPane(null)));
+$('cancel-btn').addEventListener('click', () => {
+  editorBaseline = editorSnapshot(); // Cancel really does throw the changes away
+  selectedId ? selectEntry(selectedId) : showPane(null);
+});
 
 let editPassTimer = null;
 $('e-reveal').addEventListener('click', () => {
@@ -3020,6 +3028,7 @@ async function saveEditor({ auto = false } = {}) {
     return null;
   }
   const added = await applyEditorReminders(saved);
+  editorBaseline = editorSnapshot(); // saved: nothing left to save when the editor closes
   if (auto) return { saved: true, title: saved.title };
   await loadData();
   toast(added ? `Saved, with ${added} new reminder${added === 1 ? '' : 's'}` : 'Saved');
@@ -3027,14 +3036,30 @@ async function saveEditor({ auto = false } = {}) {
   return { saved: true, title: saved.title };
 }
 
+// a brand-new, completely empty entry isn't worth keeping
+const editorIsEmptyNew = () =>
+  !editingId && !$('e-title').value.trim() && !$('e-username').value && !$('e-password').value && !$('e-url').value && !$('e-notes').textContent.trim() && !editorFiles.length && !editorSubsites.some((s) => s.url.trim());
+
+// Clicking away from an unfinished login / note (another login, Settings, Add, Lock…) saves it instead of
+// throwing it away. Only Cancel (or Esc) discards. Call this before the editor's contents are replaced or hidden.
+function autosaveOnLeave() {
+  if (!editorOpen() || !editorDirty() || editorIsEmptyNew()) return;
+  editorBaseline = editorSnapshot(); // (counts as saved, so nothing saves it twice)
+  saveEditor({ auto: true })
+    .then(async (r) => {
+      if (!r || !r.saved) return toast('Couldn’t save what you were typing');
+      await loadData();
+      renderList();
+      toast(`Saved “${r.title}”`);
+    })
+    .catch(() => toast('Couldn’t save what you were typing'));
+}
+
 // The app is about to close or restart for an update: save an unfinished login / note first, so nothing is lost.
 window.api.onFlush(async () => {
   try {
     if (!editorDirty()) return { saved: false };
-    // a brand-new, completely empty entry isn't worth keeping
-    if (!editingId && !$('e-title').value.trim() && !$('e-username').value && !$('e-password').value && !$('e-url').value && !$('e-notes').textContent.trim() && !editorFiles.length && !editorSubsites.some((s) => s.url.trim())) {
-      return { saved: false };
-    }
+    if (editorIsEmptyNew()) return { saved: false };
     return (await saveEditor({ auto: true })) || { saved: false };
   } catch {
     return { saved: false };
@@ -3675,6 +3700,7 @@ refreshMissed();
 
 // ---------- settings ----------
 $('settings-btn').addEventListener('click', () => {
+  autosaveOnLeave();
   for (const id of ['s-current', 's-new', 's-confirm']) $(id).value = '';
   $('settings-msg').textContent = '';
   renderSync();
@@ -3705,7 +3731,10 @@ $('settings-pane').addEventListener('submit', async (e) => {
 });
 
 // ---------- locking ----------
-$('lock-btn').addEventListener('click', () => window.api.lock());
+$('lock-btn').addEventListener('click', () => {
+  autosaveOnLeave(); // (sent before the lock request, so it's saved first)
+  window.api.lock();
+});
 
 window.api.onLocked((reason) => {
   if (reason === 'closed') closedLockAt = Date.now();
@@ -3896,6 +3925,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('bio-modal').classList.contains('hidden')) return closeBioModal();
   if (e.key === 'Escape' && !$('app-screen').classList.contains('hidden')) {
     if (!$('edit-pane').classList.contains('hidden') || !$('settings-pane').classList.contains('hidden')) {
+      if (editorOpen()) editorBaseline = editorSnapshot(); // Esc cancels, like the Cancel button
       selectedId ? selectEntry(selectedId) : showPane(null);
     } else if (!$('view-pane').classList.contains('hidden') && $('reminder-modal').classList.contains('hidden')) {
       closeLogin(); // Esc on an open login → blank screen
