@@ -878,7 +878,7 @@ async function openApp() {
 function sortedFiltered() {
   const q = $('search').value.trim().toLowerCase();
   return entries
-    .filter((e) => !q || [e.title, e.username, e.url, e.folder || ''].some((v) => v.toLowerCase().includes(q)))
+    .filter((e) => !q || [e.title, e.username, e.url, e.folder || '', ...(e.subsites || []).flatMap((s) => [s.url, s.description])].some((v) => v.toLowerCase().includes(q)))
     .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
 }
 
@@ -1639,6 +1639,7 @@ function selectEntry(id) {
   setRevealButton(false);
   $('v-url').textContent = e.url;
   $('v-url-field').classList.toggle('hidden', !e.url);
+  renderViewSubsites(e);
   const rich = RichNotes.richFor(e);
   const notesView = $('v-notes');
   viewMulti.clear(); // picked words belong to the login that was open
@@ -1712,6 +1713,69 @@ $('open-url-btn').addEventListener('click', () => {
   if (e && e.url) window.api.openUrl(e.url);
 });
 
+// ---------- subsites: other pages of the website, each with a description ----------
+const LINK_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+let subsitesOpenFor = null; // the login whose subsites dropdown is open
+function setSubsitesOpen(open) {
+  $('v-subsites-toggle').setAttribute('aria-expanded', String(open));
+  $('v-subsite-list').classList.toggle('hidden', !open);
+}
+$('v-subsites-toggle').addEventListener('click', () => {
+  const open = $('v-subsites-toggle').getAttribute('aria-expanded') !== 'true';
+  subsitesOpenFor = open ? selectedId : null;
+  setSubsitesOpen(open);
+});
+function renderViewSubsites(e) {
+  const subs = e.kind === 'note' ? [] : e.subsites || [];
+  $('v-subsites-label').textContent = `Subsites (${subs.length})`;
+  setSubsitesOpen(subsitesOpenFor === e.id); // closed when opening a different login
+  $('v-subsite-list').replaceChildren(
+    ...subs.map((s) => {
+      const li = document.createElement('li');
+      li.insertAdjacentHTML('afterbegin', LINK_ICON);
+      const body = Object.assign(document.createElement('div'), { className: 'subsite-body' });
+      if (s.description) body.append(Object.assign(document.createElement('div'), { className: 'subsite-desc', textContent: s.description }));
+      body.append(Object.assign(document.createElement('div'), { className: s.description ? 'subsite-url' : 'subsite-desc', textContent: s.url }));
+      const open = Object.assign(document.createElement('button'), { type: 'button', className: 'reminder-cancel reminder-edit', textContent: 'Open', title: 'Open in your browser' });
+      open.addEventListener('click', () => window.api.openUrl(s.url));
+      li.append(body, open);
+      return li;
+    })
+  );
+  $('v-subsites-field').classList.toggle('hidden', !subs.length);
+}
+
+let editorSubsites = []; // in the editor: [{ id?, url, description }]
+function renderEditorSubsites() {
+  $('e-subsite-list').replaceChildren(
+    ...editorSubsites.map((s, i) => {
+      const li = document.createElement('li');
+      const fields = Object.assign(document.createElement('div'), { className: 'subsite-fields' });
+      const url = Object.assign(document.createElement('input'), { type: 'text', value: s.url, placeholder: 'example.com/billing', maxLength: 500, ariaLabel: 'Subsite address' });
+      const desc = Object.assign(document.createElement('input'), { type: 'text', value: s.description, placeholder: 'Description, e.g. Billing page', maxLength: 200, ariaLabel: 'Subsite description' });
+      url.addEventListener('input', () => (s.url = url.value));
+      desc.addEventListener('input', () => (s.description = desc.value));
+      fields.append(url, desc);
+      const rm = Object.assign(document.createElement('button'), { type: 'button', className: 'reminder-cancel', textContent: 'Remove' });
+      rm.addEventListener('click', () => {
+        editorSubsites.splice(i, 1);
+        renderEditorSubsites();
+      });
+      li.append(fields, rm);
+      return li;
+    })
+  );
+  $('e-subsite-list').classList.toggle('hidden', !editorSubsites.length);
+}
+$('e-subsite-add').addEventListener('click', () => {
+  if (editorSubsites.length >= 30) return toast('A login can have up to 30 subsites.');
+  editorSubsites.push({ url: '', description: '' });
+  renderEditorSubsites();
+  const rows = $('e-subsite-list').querySelectorAll('li');
+  rows[rows.length - 1].querySelector('input').focus();
+});
+
 $('search').addEventListener('input', renderList);
 
 // ---------- add / edit ----------
@@ -1733,6 +1797,8 @@ function openEditor(entry, kind) {
   $('e-password').type = 'password';
   $('e-reveal').textContent = 'Show';
   $('e-url').value = entry ? entry.url : '';
+  editorSubsites = entry && entry.subsites ? entry.subsites.map((s) => ({ ...s })) : [];
+  renderEditorSubsites();
   $('e-notes').innerHTML = (entry && RichNotes.richFor(entry)) || RichNotes.fromPlain(entry ? entry.notes : '');
   updateToolbar();
   resetEditorReminders();
@@ -2883,6 +2949,7 @@ const editorSnapshot = () =>
     $('e-username').value,
     $('e-password').value,
     $('e-url').value,
+    editorSubsites.map((s) => [s.url, s.description]),
     RichNotes.sanitize($('e-notes').innerHTML),
     $('e-folder').value,
     editingIcon,
@@ -2920,6 +2987,7 @@ async function saveEditor({ auto = false } = {}) {
     username: isNote ? '' : $('e-username').value,
     password: isNote ? '' : $('e-password').value,
     url: isNote ? '' : $('e-url').value,
+    subsites: isNote ? [] : editorSubsites.map(({ id, url, description }) => ({ id, url, description })),
     notes: RichNotes.toText(notesHtml),
     notesHtml: RichNotes.hasFormatting(notesHtml) ? notesHtml : '',
     // existing files are sent by id only (their contents stay in the vault); new ones carry their contents
@@ -2945,7 +3013,7 @@ window.api.onFlush(async () => {
   try {
     if (!editorDirty()) return { saved: false };
     // a brand-new, completely empty entry isn't worth keeping
-    if (!editingId && !$('e-title').value.trim() && !$('e-username').value && !$('e-password').value && !$('e-url').value && !$('e-notes').textContent.trim() && !editorFiles.length) {
+    if (!editingId && !$('e-title').value.trim() && !$('e-username').value && !$('e-password').value && !$('e-url').value && !$('e-notes').textContent.trim() && !editorFiles.length && !editorSubsites.some((s) => s.url.trim())) {
       return { saved: false };
     }
     return (await saveEditor({ auto: true })) || { saved: false };

@@ -71,6 +71,25 @@ const cleanFileName = (n) =>
 const cleanFileType = (t) => (/^[\w.+-]{1,60}\/[\w.+-]{1,80}$/.test(String(t || '')) ? String(t) : 'application/octet-stream');
 const base64Bytes = (b) => Math.floor((b.length * 3) / 4) - (b.endsWith('==') ? 2 : b.endsWith('=') ? 1 : 0);
 
+// Subsites: other pages of a login's website that can be opened directly, each with a short description.
+const MAX_SUBSITES = 30;
+function cleanSubsites(list, existing) {
+  if (list === undefined) return existing || [];
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const s of list.slice(0, MAX_SUBSITES)) {
+    if (!s || typeof s !== 'object') continue;
+    const url = String(s.url || '').trim().slice(0, 500);
+    if (!url) continue; // a row with no address is just an empty row
+    out.push({
+      id: typeof s.id === 'string' && /^[\w-]{1,64}$/.test(s.id) ? s.id : crypto.randomUUID(),
+      url,
+      description: String(s.description || '').trim().slice(0, 200),
+    });
+  }
+  return out;
+}
+
 /** Check a login's files. Ones sent without `data` keep the data they already had (matched by id). */
 function cleanAttachments(list, existing, now) {
   if (list === undefined) return existing || [];
@@ -240,7 +259,7 @@ function readFeed(filePath, notifyKey) {
 }
 
 // The parts of a login an edit can change (to say e.g. "GitHub: icon changed").
-const ENTRY_FIELDS = ['kind', 'title', 'username', 'password', 'url', 'notes', 'notesHtml', 'attachments', 'icon', 'folder'];
+const ENTRY_FIELDS = ['kind', 'title', 'username', 'password', 'url', 'notes', 'notesHtml', 'attachments', 'icon', 'folder', 'subsites'];
 
 // Folders created or removed between two copies of the vault: [{ kind: added|deleted, name }].
 function diffFolders(before, after) {
@@ -515,9 +534,11 @@ class Vault {
       const existing = this.data.entries.find((e) => e.id === entry.id);
       if (!existing) throw new Error('Entry not found.');
       const attachments = cleanAttachments(entry.attachments, existing.attachments, now);
+      clean.subsites = cleanSubsites(entry.subsites, existing.subsites);
       saved = { ...existing, ...clean, attachments, updatedAt: now, changedOn: THIS_DEVICE };
     } else {
       const attachments = cleanAttachments(entry.attachments, [], now);
+      clean.subsites = cleanSubsites(entry.subsites, []);
       saved = { id: crypto.randomUUID(), ...clean, attachments, createdAt: now, updatedAt: now, changedOn: THIS_DEVICE };
     }
     this.data.entries = [...this.data.entries.filter((e) => e.id !== saved.id), saved];

@@ -63,6 +63,16 @@ const { Vault, generatePassword } = require('../src/vault');
     assert.strictEqual(v4.upsert({ title: 'E', icon: { type: 'image', data: 'javascript:alert(1)' } }).icon, null);
     assert.strictEqual(v4.upsert({ title: 'F', icon: { type: 'brand', id: '"><script>' } }).icon, null);
     assert.strictEqual(v4.upsert({ title: 'G', icon: { type: 'image', data: 'data:image/png;base64,' + 'A'.repeat(300000) } }).icon, null);
+    // Subsites: kept with their descriptions; empty rows dropped; left alone when an edit doesn't mention them.
+    const s1 = v4.upsert({ title: 'Bank', url: 'bank.com', subsites: [{ url: ' bank.com/billing ', description: ' Billing ' }, { url: '   ', description: 'nothing' }, { url: 'bank.com/admin' }] });
+    assert.strictEqual(s1.subsites.length, 2);
+    assert.strictEqual(s1.subsites[0].url, 'bank.com/billing');
+    assert.strictEqual(s1.subsites[0].description, 'Billing');
+    assert.strictEqual(s1.subsites[1].description, '');
+    assert(s1.subsites[0].id && s1.subsites[0].id !== s1.subsites[1].id);
+    assert.strictEqual(v4.upsert({ id: s1.id, title: 'Bank renamed' }).subsites.length, 2);
+    assert.strictEqual(v4.upsert({ id: s1.id, title: 'Bank renamed', subsites: [] }).subsites.length, 0);
+    assert.strictEqual(v4.upsert({ title: 'Many', subsites: Array.from({ length: 50 }, (_, i) => ({ url: 'x.com/' + i })) }).subsites.length, 30);
     v4.lock();
 
     // Generator.

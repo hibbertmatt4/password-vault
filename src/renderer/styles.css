@@ -824,6 +824,32 @@ button.reminder-edit:hover { background: rgba(197, 168, 130, 0.3); border-color:
 .file-size { font-size: 12px; color: var(--text-muted); }
 .file-list button.primary { background: var(--green); color: var(--cream); border-color: var(--green); }
 
+/* subsites: other pages of a login's website */
+.subsite-list, .subsite-edit-list { list-style: none; padding: 0; margin: 0 0 8px; display: flex; flex-direction: column; gap: 6px; }
+.subsite-list li, .subsite-edit-list li {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  background: var(--tint-1); border: 1px solid rgba(49, 61, 42, 0.08); color: var(--green);
+}
+.subsite-list li > svg { flex: none; color: var(--tan); }
+/* the dropdown under Website: closed shows just the toggle, open shows the subsites indented beneath the website */
+#v-subsites-field { margin-top: -6px; }
+button.subsites-toggle {
+  height: 32px; padding: 0 12px 0 8px; gap: 8px; font-size: 12.5px; font-weight: 500;
+  background: transparent; border-color: transparent; color: var(--text-muted);
+}
+button.subsites-toggle:hover { background: rgba(197, 168, 130, 0.18); border-color: rgba(197, 168, 130, 0.6); color: var(--green); }
+.subsites-toggle .chev { transition: transform 0.15s; transform: rotate(-90deg); }
+.subsites-toggle[aria-expanded='true'] .chev { transform: none; }
+#v-subsite-list { margin: 6px 0 0 14px; padding-left: 16px; border-left: 2px solid rgba(197, 168, 130, 0.55); }
+#v-subsite-list.hidden { display: none; }
+.subsite-body { flex: 1; min-width: 0; }
+.subsite-desc { font-size: 13.5px; color: var(--text-dark); overflow-wrap: anywhere; }
+.subsite-url { font-size: 12px; color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
+.subsite-edit-list li { align-items: flex-start; }
+.subsite-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.subsite-edit-list button.reminder-cancel { align-self: center; }
+.subsite-list button.reminder-cancel { flex: none; }
+
 /* file preview and drag-a-file-in */
 .modal.preview-modal { width: min(860px, 100%); display: flex; flex-direction: column; }
 .preview-body {

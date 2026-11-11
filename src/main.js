@@ -226,7 +226,7 @@ function listNames(names) {
 }
 
 // "icon", "password and username", "name, website and notes"
-const FIELD_NAMES = { title: 'name', username: 'username', password: 'password', url: 'website', notes: 'notes', notesHtml: 'notes', attachments: 'files', icon: 'icon', folder: 'folder' };
+const FIELD_NAMES = { title: 'name', username: 'username', password: 'password', url: 'website', notes: 'notes', notesHtml: 'notes', attachments: 'files', subsites: 'subsites', icon: 'icon', folder: 'folder' };
 function fieldList(fields) {
   const names = [...new Set((fields || []).map((f) => FIELD_NAMES[f]).filter(Boolean))];
   if (names.length <= 1) return names[0] || '';

@@ -185,6 +185,13 @@
                 <span>Open</span>
               </button></div>
           </div>
+          <div class="field login-only hidden" id="v-subsites-field">
+            <button type="button" id="v-subsites-toggle" class="subsites-toggle" aria-expanded="false" aria-controls="v-subsite-list">
+              <svg class="chev" viewBox="0 0 10 10" width="11" height="11" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span id="v-subsites-label">Subsites</span>
+            </button>
+            <ul id="v-subsite-list" class="subsite-list hidden"></ul>
+          </div>
           <div class="field" id="v-notes-field"><label>Notes</label>
             <div id="v-notes" class="value notes"></div>
           </div>
@@ -243,6 +250,11 @@
             </div>
           </div>
           <div class="field login-only"><label for="e-url">Website</label><input id="e-url" placeholder="example.com" /></div>
+          <div class="field login-only"><label>Subsites</label>
+            <ul id="e-subsite-list" class="subsite-edit-list"></ul>
+            <button type="button" id="e-subsite-add" class="add-reminder">+ Add a subsite</button>
+            <p class="hint">Other pages of this website you open often, such as a billing page or an admin area. Each one gets its own Open button, with a short description so you know where it goes.</p>
+          </div>
           <div class="field"><label id="e-notes-label">Notes</label>
             <div class="notes-box">
               <div id="notes-toolbar" class="notes-toolbar" role="toolbar" aria-label="Formatting">
