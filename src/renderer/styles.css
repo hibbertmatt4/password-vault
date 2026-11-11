@@ -957,6 +957,8 @@ button.icon-cell {
 button.icon-cell span.t { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 button.icon-cell:hover { border-color: var(--tan); background: rgba(197, 168, 130, 0.1); }
 button.icon-cell.selected { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+/* "No logo with that name": a message across the whole grid, not squeezed into one narrow column */
+.icon-grid > .hint { grid-column: 1 / -1; margin: 4px 2px; }
 .emoji-grid { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
 .emoji-grid button.icon-cell { font-size: 24px; padding: 6px 0; font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif; }
 .upload-area { display: flex; align-items: center; gap: 18px; padding: 10px 2px 4px; }
