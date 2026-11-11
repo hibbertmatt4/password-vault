@@ -889,8 +889,12 @@ button.reminder-edit:hover { background: rgba(197, 168, 130, 0.3); border-color:
 
 /* Settings → Showing passwords */
 .reveal-intro { margin: -4px 0 12px; }
-.segmented.wrap { flex-wrap: wrap; border-radius: 20px; }
-.segmented.wrap button { padding: 0 14px; }
+/* choices share the width in even columns, so when the window is narrow they fall into tidy equal rows (e.g. 3 + 3) */
+.segmented.wrap { display: grid; grid-template-columns: repeat(6, 1fr); width: 100%; border-radius: 20px; }
+.segmented.wrap button { padding: 0 10px; }
+#reveal-card { container-type: inline-size; }
+@container (max-width: 560px) { .segmented.wrap { grid-template-columns: repeat(3, 1fr); } }
+@container (max-width: 360px) { .segmented.wrap { grid-template-columns: repeat(2, 1fr); } }
 .reveal-summary { margin: 12px 0 14px; }
 .reveal-custom {
   display: flex; align-items: center; justify-content: center; gap: 6px; margin: 16px 0 0; padding: 14px 10px;
