@@ -9,6 +9,7 @@ An offline, encrypted password manager for Windows and Mac.
 - **Quick edit and delete:** hover over a login in the sidebar (or open it) for ✎ **Edit** and 🗑 **Delete** buttons; folders have the same buttons for renaming and deleting. Clicking a folder also opens its menu with **Rename** and **Delete** at the top, and right-clicking a login offers **Edit**, **Remind me** and **Delete**.
 - **Formatted notes**, like writing an email or a Word document. The toolbar above Notes has:
   - **Text:** size (Small to Huge), **bold**, *italic*, underline, ~~strikethrough~~ and text colour.
+  - **Lights up:** a toolbar button is shaded while the cursor is in something that uses it, such as bold text, a highlighted or coloured part, a non-normal size, a list, an alignment, or inside a table. The pages are wide enough for the whole toolbar to fit on one line (in a narrow window it wraps).
   - **Highlight:** yellow, green, blue, pink or orange, or **No highlight**.
   - **Layout:** bulleted and numbered lists, and align left, centre or right.
   - **Tables:** click the table button and pick a size from the grid. Inside a table, the same button can insert or delete rows and columns, or delete the table. **Tab** moves to the next cell, and pressing it in the last cell adds a row.

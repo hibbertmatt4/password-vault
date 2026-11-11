@@ -1865,6 +1865,25 @@ function updateToolbar() {
   if (f && notesEd.contains(f)) size = f.getAttribute('size');
   const s = RichNotes.SIZES.find((x) => x[1] === size);
   $('tb-size-label').textContent = s ? s[0] : size > '3' ? 'Huge' : 'Small';
+  // Highlight, text colour, text size and table light up like Bold when the cursor (or selection) is in something
+  // that isn't the default: a highlighted or coloured part, a non-normal size, or a table.
+  let hl = false;
+  let colour = false;
+  if (r) {
+    for (let el = nodeEl(r.commonAncestorContainer); el && el !== notesEd && notesEd.contains(el); el = el.parentElement) {
+      if (/^(TD|TH|TABLE|MARK)$/.test(el.tagName)) break;
+      // (read from the attribute: the page's security policy stops inline styles from being applied through el.style)
+      const style = el.getAttribute('style') || '';
+      const bg = /background-color:\s*([^;]+)/.exec(style);
+      if (bg && !/transparent|rgba\(0, 0, 0, 0\)/.test(bg[1])) hl = true;
+      if ((el.tagName === 'FONT' && el.getAttribute('color')) || /(^|;)\s*color:/.test(style)) colour = true;
+    }
+  }
+  const menuBtn = (m) => document.querySelector(`#notes-toolbar [data-menu="${m}"]`);
+  menuBtn('highlight').classList.toggle('active', hl);
+  menuBtn('colour').classList.toggle('active', colour);
+  menuBtn('size').classList.toggle('active', inNotes && size !== '3');
+  menuBtn('table').classList.toggle('active', inNotes && !!notesCell());
   // the Hide button turns into "Show text" while the cursor is inside a hidden section
   const inSecret = inNotes && !!secretAround();
   $('tb-secret').classList.toggle('active', inSecret);
