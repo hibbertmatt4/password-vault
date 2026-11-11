@@ -94,8 +94,7 @@ input, textarea {
   border: 1px solid rgba(49, 61, 42, 0.2);
   border-radius: var(--radius-small);
   outline: none;
-  transition: border-color 0.15s;
-  user-select: text;
+  user-select: text; /* (no colour fade: on some Macs the fade left a stale patch around the focus ring) */
 }
 input:focus, textarea:focus { border-color: var(--tan); box-shadow: 0 0 0 3px rgba(197, 168, 130, 0.18); }
 input:focus-visible, textarea:focus-visible { outline: none; }
@@ -306,6 +305,10 @@ button.vb {
   background: transparent; border: 1px solid transparent;
 }
 button.vb svg { width: 15px; height: 15px; flex: none; color: var(--tan); transition: color 0.15s; }
+/* Mac (Intel graphics) sometimes painted the fade from the generic tan hover as a tan box over the whole row:
+   these small buttons switch instantly, and each value box gets its own layer (the same fix as the notes). */
+button.vb { transition: color 0.15s, box-shadow 0.15s; }
+button.vb:hover { transition: none; }
 button.vb:hover { background: #fff; border-color: rgba(49, 61, 42, 0.12); box-shadow: 0 1px 3px rgba(49, 61, 42, 0.08); }
 button.vb:hover svg { color: var(--green); }
 button.vb.vb-main { background: var(--green); border-color: var(--green); color: var(--cream); }
