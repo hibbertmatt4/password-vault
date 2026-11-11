@@ -48,6 +48,7 @@ function checkForRemoteChanges() {
   if (res.changed || merged) send('vault:changed');
   rememberNotifyKey();
   followShared(vault.shared);
+  shareReminders();
   reportRemoteChanges();
   markFeedSeen(); // everything in the change list has now been reported (or was made here)
   send('sync:status', syncStatus());
@@ -92,6 +93,26 @@ function publishShared() {
   if (notifyScope() !== 'all' || !isSynced() || !vault.isUnlocked()) return;
   const shared = vault.setShared({ notify: notifyPrefs() });
   settings.set('notifySharedAt', shared.updatedAt);
+}
+
+// ---------- reminders shared between computers ----------
+// Reminders live on each computer (so they fire while locked), and also in the synced vault file (encrypted with
+// the notify key, so a locked computer can read them too). Anything made on one computer reaches the others.
+function pullReminders(shared) {
+  if (shared && shared.reminders && reminders.importState(shared.reminders)) send('reminders:changed');
+}
+function pushReminders() {
+  if (!vault || !isSynced() || !vault.isUnlocked()) return; // (anything pending goes in when the vault is next unlocked)
+  try {
+    vault.setSharedReminders(reminders.exportState());
+  } catch (err) {
+    syncLog(`could not save reminders to the synced vault: ${err && err.message}`);
+  }
+}
+function shareReminders() {
+  if (!vault || !isSynced() || !vault.isUnlocked()) return;
+  pullReminders(vault.shared);
+  pushReminders();
 }
 
 // Keep the notify key sealed by the operating system (Keychain / Windows protected storage),
@@ -244,7 +265,11 @@ function checkWhileLocked() {
   }
   if (now === vault.seenHash) return;
   vault.seenHash = now;
-  if (notifyKey) followShared(readShared(vault.filePath, notifyKey));
+  if (notifyKey) {
+    const shared = readShared(vault.filePath, notifyKey);
+    followShared(shared);
+    pullReminders(shared); // reminders made on another computer start working here even while locked
+  }
   const items = takeNewFeedItems();
   if (items) {
     if (!items.length) syncLog('locked: file changed, nothing new from other computers');
@@ -262,7 +287,11 @@ function checkWhileLocked() {
 // At start-up: report what other computers changed while this one was off, then keep watching.
 function catchUpOnStart() {
   if (!vault || samePath(vault.filePath, localPath)) return;
-  if (notifyKey) followShared(readShared(vault.filePath, notifyKey));
+  if (notifyKey) {
+    const shared = readShared(vault.filePath, notifyKey);
+    followShared(shared);
+    pullReminders(shared);
+  }
   const since = settings.get('feedSeenUntil');
   const items = takeNewFeedItems(since || '9999'); // first run with this feature: just remember what's there
   vault.seenHash = vault.fileHash();
@@ -324,9 +353,52 @@ const prefs = () => ({
   revealSeconds: Number.isInteger(settings.get('revealSeconds')) ? settings.get('revealSeconds') : 30,
 });
 
+// ---------- text size (zoom): Ctrl / ⌘ and + - 0, or Settings → Text size ----------
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 2;
+const ZOOM_STEP = 0.1;
+const zoomFactor = () => {
+  const z = settings && settings.get('zoomFactor');
+  return typeof z === 'number' && z >= ZOOM_MIN && z <= ZOOM_MAX ? z : 1;
+};
+// Applies the zoom to the page. (The green title bar is drawn by the page at a constant real size, whatever the
+// zoom, so the window's own buttons, which don't zoom, always line up with it.)
+function applyZoom() {
+  if (!win || win.isDestroyed()) return;
+  const z = zoomFactor();
+  win.webContents.setZoomFactor(z);
+  // Zoomed in, the page needs more room: the smallest the window can be grows with it (and shrinks a little when zoomed out).
+  win.setMinimumSize(Math.round(Math.min(1400, Math.max(560, 760 * z))), Math.round(Math.min(900, Math.max(400, 500 * z))));
+  send('zoom:changed', z);
+}
+function setZoom(value) {
+  const z = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(value) || 1)) * 100) / 100;
+  settings.set('zoomFactor', z === 1 ? null : z);
+  applyZoom();
+  return z;
+}
+const stepZoom = (dir) => setZoom(zoomFactor() + dir * ZOOM_STEP);
+
 // Close the window into the tray / menu bar: the vault locks, the app keeps running (updates, reminders).
 function hideToTray() {
-  if (win && !win.isDestroyed()) win.hide();
+  if (win && !win.isDestroyed()) {
+    if (process.platform === 'darwin' && win.isFullScreen()) {
+      // Hiding a Mac window that's in full screen leaves its empty black full-screen space behind, so leave
+      // full screen first (it takes a moment) and hide once that's done.
+      const w = win;
+      let done = false;
+      const hideNow = () => {
+        if (done || w.isDestroyed()) return;
+        done = true;
+        w.hide();
+      };
+      w.once('leave-full-screen', () => setTimeout(hideNow, 50));
+      setTimeout(hideNow, 1500); // in case that never arrives
+      w.setFullScreen(false);
+    } else {
+      win.hide();
+    }
+  }
   lockVault('closed');
   firstHideHint();
 }
@@ -489,7 +561,20 @@ function createWindow() {
   const sendFullScreen = () => send('window:fullscreen', win.isFullScreen());
   win.on('enter-full-screen', sendFullScreen);
   win.on('leave-full-screen', sendFullScreen);
-  win.webContents.on('did-finish-load', sendFullScreen);
+  win.webContents.on('did-finish-load', () => {
+    sendFullScreen();
+    applyZoom();
+  });
+  // Ctrl / ⌘ with + (or =), - and 0: bigger, smaller, back to normal.
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown' || input.alt) return;
+    if (!(process.platform === 'darwin' ? input.meta : input.control)) return;
+    if (input.key === '+' || input.key === '=') stepZoom(1);
+    else if (input.key === '-' || input.key === '_') stepZoom(-1);
+    else if (input.key === '0') setZoom(1);
+    else return;
+    e.preventDefault();
+  });
 }
 
 // Decrypted copies of files opened from logins live here, and are deleted when the vault locks or the app quits.
@@ -578,6 +663,15 @@ function buildMenu() {
       ],
     },
     { role: 'editMenu' },
+    {
+      // (the shortcuts themselves are handled in createWindow, so they're only shown here)
+      label: 'View',
+      submenu: [
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', registerAccelerator: false, click: () => stepZoom(1) },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', registerAccelerator: false, click: () => stepZoom(-1) },
+        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', registerAccelerator: false, click: () => setZoom(1) },
+      ],
+    },
     { role: 'windowMenu' },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -688,6 +782,7 @@ function registerIpc() {
       send('vault:changed');
       biometric.refresh(vault.keyInfo()); // vault moved: Touch ID / Hello follows it
       rememberNotifyKey();
+      shareReminders(); // this computer's reminders join the ones in the synced vault, and the other way round
       if (passwordChanged) syncLog('joined a synced vault with a different master password');
       return { ok: true, passwordChanged, status: syncStatus() };
     })
@@ -732,6 +827,7 @@ function registerIpc() {
     }
     failedAttempts = 0;
     checkForRemoteChanges(); // catch anything the other computer saved while we were unlocking
+    shareReminders(); // (also covers a vault that isn't synced yet: nothing happens then)
     biometric.refresh(vault.keyInfo()); // master password used: restart the Touch ID / Hello 7-day clock
     rebuildTrayMenu();
     return { ok: true };
@@ -793,6 +889,7 @@ function registerIpc() {
     res.key.fill(0);
     failedAttempts = 0;
     checkForRemoteChanges();
+    shareReminders();
     rebuildTrayMenu();
     return { ok: true };
   });
@@ -876,6 +973,23 @@ function registerIpc() {
     reminders.remove(String(id));
     return { ok: true };
   });
+  // Edit an upcoming reminder, or run a sent one again with a new time (it moves back to upcoming).
+  ipcMain.handle('reminders:update', (_e, id, r) => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    try {
+      return { ok: true, reminder: reminders.update(String(id), r || {}) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  ipcMain.handle('reminders:again', (_e, id, r) => {
+    if (!vault.isUnlocked()) return { ok: false, locked: true };
+    try {
+      return { ok: true, reminder: reminders.again(String(id), r || {}) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
   ipcMain.handle(
     'vault:delete',
     guarded((_e, id) => {
@@ -917,8 +1031,14 @@ function registerIpc() {
       case 'maximize': return w.isMaximized() ? w.unmaximize() : w.maximize();
       case 'close': return w.close();
       case 'quit': return quitFromMenu();
+      case 'zoomIn': return stepZoom(1);
+      case 'zoomOut': return stepZoom(-1);
+      case 'zoomReset': return setZoom(1);
     }
   });
+  ipcMain.handle('zoom:get', () => zoomFactor());
+  ipcMain.handle('zoom:set', (_e, z) => setZoom(z));
+  ipcMain.handle('zoom:step', (_e, dir) => stepZoom(dir > 0 ? 1 : -1));
   // The page can't reliably tell whether its window is hidden (e.g. started in the tray), so ask here.
   ipcMain.handle('window:isVisible', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender);
@@ -1047,6 +1167,7 @@ if (!app.requestSingleInstanceLock()) {
     // Reminders: fire any that came due while the app wasn't running, then keep a timer for the next one.
     // Clicking one opens the app (and the login it's about, once unlocked).
     let remindersStarting = true;
+    reminders.setOnChange(pushReminders); // a change made here is saved to the synced vault straight away
     reminders.init((fired, clicked) => {
       // Seen already when the user clicked its notification, or was looking at the app when it went off.
       // Otherwise the app shows an "a reminder went off" message the next time it's opened.

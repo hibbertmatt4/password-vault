@@ -54,6 +54,8 @@ An offline, encrypted password manager for Windows and Mac.
     - **Settings → Reminders** lists every upcoming reminder, with its repeat and login, then the ones **Sent recently** (last 60 days).
     - Click a reminder there to open its login.
     - Each login's page and editor also show its own reminders.
+  - **Editing:** **Edit** on an upcoming reminder changes its message, time or repeat. **Edit** on one under *Sent recently* opens it with its message filled in, so you can pick a new time or make it repeat; saving moves it back to *Upcoming*.
+  - **On all your computers:** when your vault is synced, reminders are too. One made on your Windows PC shows up on your Mac (and the other way round), including edits, cancellations and which ones have been sent. They're stored encrypted in the synced vault file, and each computer reads them even while locked, so they go off wherever Password Vault is running. (Both computers need this version or newer. Reminders you already had join in the first time you unlock after updating.) If you don't use sync, they stay on that computer.
   - **Cancelling:** use **Cancel** on any reminder. Deleting a login also cancels its reminders.
   - **Updates and your reminders:** they live in their own file on your computer (`reminders.json` in Password Vault's data folder), which updating never touches. It's written safely (to a temporary file first) with a backup copy beside it; if the file is ever damaged the backup is used, and the damaged one is kept aside rather than overwritten. A one-time reminder that has gone off moves from *Upcoming* to *Sent recently* (for 60 days).
   - **Where they're kept:** on that computer only, sealed by the operating system. They don't sync.
@@ -143,12 +145,18 @@ The Mac app isn't signed by Apple, so macOS blocks it the first time. Go to **Sy
 
 If you do have a Mac: install Node.js, then run `npm install` and `npm run dist:mac` in this folder.
 
+## Text size (zoom)
+- **Keyboard:** **Ctrl** (Windows) or **⌘** (Mac) with **+** zooms in, with **−** zooms out, and with **0** goes back to normal size. Ctrl + the mouse wheel (or a pinch on a Mac trackpad) works too.
+- **Settings → Text size:** **−** and **+** buttons with the current size (60% to 200%), and **Back to 100%**. The **View** menu has the same.
+- Everything inside the window scales together (text, buttons, spacing). The green title bar at the top (logo, menus) stays the same real size at every zoom, so it always lines up with the window's own minimise / maximise / close buttons (or the Mac traffic lights), with no gap. Zoomed in a lot, the sidebar gets narrower and the window's smallest size grows to make room. The size is remembered on each computer.
+
 ## Showing passwords
 - **Hides itself:** when you press **Show** on a password (a login's page or the editor) or on a hidden part of a note, it hides again by itself after **30 seconds**. Pressing **Hide**, opening another login, or locking hides it sooner.
 - **Changing the time:** **Settings → Showing passwords** has **Unlimited**, **30 seconds**, **1 minute**, **3 minutes**, **5 minutes** and **Custom**. Custom has **hours : minutes : seconds** wheels: scroll the mouse wheel over one, click its ▲ ▼, or type a number. Choose at least 1 second (use **Unlimited** for no limit). It's a setting for this computer.
 
 ## Running in the background
 - **Closing the window:** Password Vault **locks** and keeps running in the **system tray** (Windows, by the clock) or the **menu bar** (Mac). It keeps checking for updates and can notify you.
+- **Full screen on a Mac:** closing or quitting (⌘Q) while the window is full screen first leaves full screen, then hides, so no empty black screen is left behind.
 - **Opening it again:** click the tray icon (Windows) or choose **Open Password Vault** from its menu.
 - **Quitting:** choose **Quit Password Vault** from the same menu. On a Mac, **⌘Q** and **Vault → Quit** do the same as closing the window (Password Vault stays in the menu bar, locked, so updates and reminders keep working); use the menu bar icon's **Quit Password Vault** (or Dock → Quit) to really quit.
 - **Starting at sign-in:** by default it also starts quietly in the tray when you sign in to your computer, so update notifications arrive even if you don't open it.

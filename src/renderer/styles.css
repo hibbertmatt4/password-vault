@@ -36,8 +36,11 @@
   --radius-pill: 100px;
   --shadow-menu: 0 8px 24px rgba(49, 61, 42, 0.15);
   --shadow-modal: 0 16px 44px rgba(30, 36, 26, 0.28);
-  --sidebar-w: 290px;
-  --titlebar-h: 40px; /* must match TITLEBAR_HEIGHT in main.js */
+  --sidebar-w: clamp(200px, 34vw, 290px); /* narrower when the page is zoomed in a lot */
+  /* 40 real pixels (must match TITLEBAR_HEIGHT in main.js) however far the page is zoomed: the window's own
+     minimise / maximise / close buttons don't zoom, so the green bar behind them mustn't either. The page sets
+     --zoom (and --zoom-inv, its inverse) when the zoom changes. */
+  --titlebar-h: calc(40px / var(--zoom, 1));
   --logo-radius: 21.875%; /* same corner as logo.svg (rx 112 of 512), so clipping and shadows follow the logo exactly */
 }
 
@@ -229,7 +232,7 @@ button.add-btn:hover { background: #d4b993; border-color: #d4b993; }
 .page-eyebrow::before { content: ''; display: block; width: 1.5rem; height: 1px; background: var(--tan); }
 .page-title { font-family: var(--font-display); font-size: 2rem; font-weight: 700; color: var(--green); line-height: 1.2; word-break: break-word; }
 .page-title em { font-style: italic; color: var(--tan); }
-.pane-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 1.5rem; }
+.pane-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 1.5rem; }
 .card {
   background: var(--white); border: 1px solid var(--line);
   border-radius: var(--radius-card); padding: 22px 22px 6px; margin-bottom: 1.25rem;
@@ -379,15 +382,18 @@ button.later:hover { background: rgba(244, 224, 202, 0.08); color: var(--cream);
 .titlebar {
   flex: none;
   height: var(--titlebar-h);
-  display: flex; align-items: center; gap: 14px;
-  padding: 0 150px 0 12px; /* right side is kept clear for the minimise / maximise / close buttons */
+  display: flex; align-items: center; gap: calc(14px / var(--zoom, 1));
+  padding: 0 calc(150px / var(--zoom, 1)) 0 calc(12px / var(--zoom, 1)); /* right side is kept clear for the minimise / maximise / close buttons */
   background: var(--green);
   color: var(--cream);
   -webkit-app-region: drag; /* drag here to move the window */
   position: relative; z-index: 9500;
 }
-body.mac .titlebar { padding-left: 84px; padding-right: 12px; } /* room for the Mac traffic lights */
-body.mac.fullscreen .titlebar { padding-left: 12px; } /* full screen hides the traffic lights */
+/* room for the Mac traffic lights (they don't zoom, so the room is divided by the page's zoom) */
+body.mac .titlebar { padding-left: calc(84px / var(--zoom, 1)); padding-right: calc(12px / var(--zoom, 1)); }
+body.mac.fullscreen .titlebar { padding-left: calc(12px / var(--zoom, 1)); } /* full screen hides the traffic lights */
+/* the logo and menus in the bar stay their normal size too */
+.titlebar > * { zoom: var(--zoom-inv, 1); }
 .titlebar-brand { display: flex; align-items: center; gap: 8px; }
 .titlebar-brand img { width: 20px; height: 20px; border-radius: var(--logo-radius); }
 .titlebar-brand span {
@@ -772,6 +778,7 @@ button.row-btn.danger:hover { background: rgba(220, 120, 100, 0.22); color: #f6c
 .reminder-body.clickable:hover .reminder-text { text-decoration: underline; }
 button.add-reminder { height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
 button.reminder-cancel { height: 30px; padding: 0 12px; font-size: 12px; flex: none; }
+.reminder-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 /* files attached to a login */
 .file-list { list-style: none; padding: 0; margin: 0 0 8px; display: flex; flex-direction: column; gap: 6px; }
 .file-list li {
@@ -814,6 +821,12 @@ button.reminder-cancel { height: 30px; padding: 0 12px; font-size: 12px; flex: n
 }
 .stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button,
 .time-input::-webkit-inner-spin-button, .time-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Settings → Text size */
+.zoom-intro { margin: -4px 0 12px; }
+.zoom-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.zoom-value { min-width: 76px; text-align: center; font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--green); }
+.stepper button.step:disabled { opacity: 0.3; cursor: default; }
 
 /* Settings → Showing passwords */
 .reveal-intro { margin: -4px 0 12px; }

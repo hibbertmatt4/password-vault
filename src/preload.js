@@ -51,10 +51,16 @@ contextBridge.exposeInMainWorld('api', {
   onRemoteChanges: (cb) => ipcRenderer.on('sync:remoteChanges', (_e, msg) => cb(msg)),
   reminders: () => ipcRenderer.invoke('reminders:list'),
   addReminder: (r) => ipcRenderer.invoke('reminders:add', r),
+  updateReminder: (id, r) => ipcRenderer.invoke('reminders:update', id, r),
+  rerunReminder: (id, r) => ipcRenderer.invoke('reminders:again', id, r),
   removeReminder: (id) => ipcRenderer.invoke('reminders:remove', id),
   clearReminderHistory: () => ipcRenderer.invoke('reminders:clearHistory'),
   // Right-click in the notes: tell the main process whether to add "Hide" / "Unhide" to its menu (sync, so it
   // arrives before the menu is built), and receive the click on it.
+  getZoom: () => ipcRenderer.invoke('zoom:get'),
+  setZoom: (z) => ipcRenderer.invoke('zoom:set', z),
+  stepZoom: (dir) => ipcRenderer.invoke('zoom:step', dir),
+  onZoom: (cb) => ipcRenderer.on('zoom:changed', (_e, z) => cb(z)),
   setNotesContext: (state) => ipcRenderer.sendSync('notes:ctx', state),
   onNotesAction: (cb) => ipcRenderer.on('notes:action', (_e, action) => cb(action)),
   missedReminders: () => ipcRenderer.invoke('reminders:missed'),

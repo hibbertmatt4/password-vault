@@ -10,6 +10,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { mergeReminders } = require('./reminders-merge');
 
 const KDF = { name: 'scrypt', N: 131072, r: 8, p: 1, keyLen: 32 };
 const SCRYPT_MAXMEM = 256 * 1024 * 1024;
@@ -210,7 +211,15 @@ function decryptShared(notifyKey, file) {
     return null;
   }
 }
-const newerShared = (a, b) => (!a ? b : !b ? a : b.updatedAt > a.updatedAt ? b : a);
+// Two copies of the shared settings: the newer one's settings win, but reminders are merged one by one, so a
+// reminder made on one computer is never lost to a newer save from another.
+function newerShared(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const out = { ...(b.updatedAt > a.updatedAt ? b : a) };
+  if (a.reminders || b.reminders) out.reminders = mergeReminders(a.reminders, b.reminders);
+  return out;
+}
 
 /** Read a vault file's shared settings with a notify key (works while locked), or null. */
 function readShared(filePath, notifyKey) {
@@ -295,6 +304,22 @@ class Vault {
     this.shared = { ...(this.shared || {}), ...values, updatedAt: new Date().toISOString() };
     this._write();
     return this.shared;
+  }
+
+  /**
+   * Reminders made on this computer join the ones in the file, so every computer sharing the vault sees them.
+   * Returns true when that changed the file.
+   */
+  setSharedReminders(state) {
+    this._requireUnlocked();
+    this.syncFromDisk();
+    this._requireUnlocked();
+    const current = this.shared && this.shared.reminders;
+    const merged = mergeReminders(current, state);
+    if (JSON.stringify(merged) === JSON.stringify(mergeReminders(current, current))) return false; // nothing new
+    this.shared = { ...(this.shared || {}), reminders: merged, updatedAt: (this.shared && this.shared.updatedAt) || new Date().toISOString() };
+    this._write();
+    return true;
   }
 
   /** Changes other computers made since the last call (and forget them). */

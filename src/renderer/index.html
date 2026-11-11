@@ -36,6 +36,15 @@
         </div>
       </div>
       <div class="menu-root">
+        <button type="button" class="menu-top" data-menu="view">View</button>
+        <div class="menu-pop hidden" data-pop="view" role="menu">
+          <button type="button" class="menu-item" data-action="zoomIn">Zoom in <kbd>Ctrl++</kbd></button>
+          <button type="button" class="menu-item" data-action="zoomOut">Zoom out <kbd>Ctrl+-</kbd></button>
+          <div class="menu-sep"></div>
+          <button type="button" class="menu-item" data-action="zoomReset">Actual size <kbd>Ctrl+0</kbd></button>
+        </div>
+      </div>
+      <div class="menu-root">
         <button type="button" class="menu-top" data-menu="window">Window</button>
         <div class="menu-pop hidden" data-pop="window" role="menu">
           <button type="button" class="menu-item" data-action="minimize">Minimise</button>
@@ -308,6 +317,19 @@
               <button type="button" id="update-action" class="primary hidden"></button>
               <button type="button" id="check-updates-btn">Check for updates</button>
             </div>
+          </div>
+        </div>
+
+        <div id="zoom-card" class="card update-card">
+          <div class="card-title">Text size</div>
+          <p class="update-text zoom-intro">Make everything in Password Vault bigger or smaller. You can also press <strong class="zoom-key">Ctrl</strong> and <strong>+</strong> or <strong>−</strong> at any time, or <strong>0</strong> to go back to normal.</p>
+          <div class="zoom-row">
+            <div class="stepper">
+              <button type="button" class="step" id="zoom-out" aria-label="Smaller text">−</button>
+              <span id="zoom-value" class="zoom-value">100%</span>
+              <button type="button" class="step" id="zoom-in" aria-label="Bigger text">+</button>
+            </div>
+            <button type="button" id="zoom-reset">Back to 100%</button>
           </div>
         </div>
 

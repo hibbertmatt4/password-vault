@@ -584,6 +584,39 @@ $('bg-keep').addEventListener('change', async () => {
   renderBackground(p);
   toast(p.keepRunning ? 'Password Vault will keep running when you close the window' : 'Closing the window will quit Password Vault');
 });
+// ---------- text size (zoom) ----------
+// Ctrl / ⌘ and + - 0 are handled by the main process; this is the Settings card, the page's idea of the zoom (the
+// Mac title bar needs it), and Ctrl + mouse wheel / trackpad pinch.
+let zoomNow = 1;
+function renderZoom(z) {
+  zoomNow = z;
+  $('zoom-value').textContent = `${Math.round(z * 100)}%`;
+  $('zoom-out').disabled = z <= 0.6 + 0.001;
+  $('zoom-in').disabled = z >= 2 - 0.001;
+  $('zoom-reset').disabled = Math.abs(z - 1) < 0.001;
+  document.documentElement.style.setProperty('--zoom', String(z));
+  document.documentElement.style.setProperty('--zoom-inv', String(1 / z));
+}
+document.querySelector('.zoom-key').textContent = window.api.platform === 'darwin' ? '⌘' : 'Ctrl';
+window.api.getZoom().then(renderZoom);
+window.api.onZoom(renderZoom);
+$('zoom-in').addEventListener('click', () => window.api.stepZoom(1));
+$('zoom-out').addEventListener('click', () => window.api.stepZoom(-1));
+$('zoom-reset').addEventListener('click', () => window.api.setZoom(1));
+let zoomWheel = 0;
+window.addEventListener(
+  'wheel',
+  (e) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    zoomWheel += e.deltaY;
+    if (Math.abs(zoomWheel) < 40) return;
+    window.api.stepZoom(zoomWheel < 0 ? 1 : -1);
+    zoomWheel = 0;
+  },
+  { passive: false }
+);
+
 // ---------- Settings → Showing passwords: how long Show stays shown ----------
 let revealSeconds = 30; // 0 = until you hide it yourself
 const REVEAL_PRESETS = [0, 30, 60, 180, 300];
@@ -2865,10 +2898,13 @@ document.querySelectorAll('[data-unit]').forEach((b) => b.addEventListener('clic
 $('reminder-amount').addEventListener('input', updateReminderPreview);
 $('reminder-at').addEventListener('input', updateReminderPreview);
 
-function openReminder(entry, forEditor = false) {
+// edit (optional): { id, mode: 'edit' (an upcoming reminder) | 'again' (a sent one, to run again), record }
+let reminderEditing = null;
+function openReminder(entry, forEditor = false, edit = null) {
   closeMenu();
   reminderFor = entry || null;
   reminderForEditor = forEditor;
+  reminderEditing = edit;
   $('reminder-title').textContent = entry && entry.title ? `Remind me about “${entry.title}”` : forEditor ? 'Remind me about this login' : 'New reminder';
   $('reminder-sub').textContent = forEditor && !editingId
     ? 'Saved when you save this login. You’ll get a notification with this message, even if the window is closed.'
@@ -2884,6 +2920,18 @@ function openReminder(entry, forEditor = false) {
   setCalPick(tomorrow);
   setReminderUnit('hours');
   setReminderWhen('timer');
+  if (edit) {
+    // Editing: the message, repeat and time are filled in (a sent reminder starts at 9:00 tomorrow).
+    const again = edit.mode === 'again';
+    $('reminder-title').textContent = again ? 'Run this reminder again' : 'Edit reminder';
+    $('reminder-sub').textContent = again
+      ? 'Change the message or time if you like. It goes back to your upcoming reminders.'
+      : 'Change the message, the time or how often it repeats.';
+    $('reminder-text').value = edit.record.text;
+    setReminderRepeat(edit.record.repeat || '');
+    setReminderWhen('date');
+    setCalPick(again ? tomorrow : new Date(edit.record.at));
+  }
   show($('reminder-modal'));
   $('reminder-text').focus();
 }
@@ -2891,6 +2939,7 @@ function closeReminder() {
   hide($('reminder-modal'));
   reminderFor = null;
   reminderForEditor = false;
+  reminderEditing = null;
 }
 $('reminder-cancel').addEventListener('click', closeReminder);
 $('reminder-modal').addEventListener('mousedown', (e) => {
@@ -2916,6 +2965,17 @@ $('reminder-form').addEventListener('submit', async (e) => {
   if (!text) return (err.textContent = 'Type what you want to be reminded about.');
   if (!at) return (err.textContent = reminderWhen === 'timer' ? 'Choose how long, from 1 to 999.' : 'Choose a date and time.');
   if (at <= Date.now()) return (err.textContent = 'Choose a time in the future.');
+  if (reminderEditing) {
+    const payload = { text, at: at.toISOString(), repeat: reminderRepeat || null };
+    const again = reminderEditing.mode === 'again';
+    const res = again ? await window.api.rerunReminder(reminderEditing.id, payload) : await window.api.updateReminder(reminderEditing.id, payload);
+    if (res.locked) return closeReminder();
+    if (!res.ok) return (err.textContent = res.error);
+    closeReminder();
+    await renderReminders();
+    toast(`${again ? 'Reminder set again' : 'Reminder updated'} for ${whenText(res.reminder.at)}${res.reminder.repeat ? `, ${REPEAT_SHORT[res.reminder.repeat]}` : ''}`);
+    return;
+  }
   if (reminderForEditor && !editingId) {
     // Inside the editor of a brand-new login: keep it until the login is saved (it has no id yet).
     // (For a login that already exists, the reminder is created straight away, like on the login's page.)
@@ -2958,7 +3018,14 @@ function reminderItem(r, opts = {}) {
   }
   const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'reminder-cancel', textContent: opts.button || 'Cancel' });
   btn.addEventListener('click', () => opts.onButton(r));
-  li.append(body, btn);
+  const actions = Object.assign(document.createElement('div'), { className: 'reminder-actions' });
+  if (opts.onEdit) {
+    const edit = Object.assign(document.createElement('button'), { type: 'button', className: 'reminder-cancel reminder-edit', textContent: opts.editLabel || 'Edit' });
+    edit.addEventListener('click', () => opts.onEdit(r));
+    actions.append(edit);
+  }
+  actions.append(btn);
+  li.append(body, actions);
   return li;
 }
 
@@ -2974,7 +3041,8 @@ async function renderReminders() {
   const data = await window.api.reminders();
   reminderCache = { upcoming: data.upcoming || [], recent: data.recent || [] };
   const { upcoming, recent } = reminderCache;
-  $('s-reminder-list').replaceChildren(...upcoming.map((r) => reminderItem(r, { showLogin: true, open: true, onButton: cancelReminder })));
+  const editUpcoming = (x) => openReminder(null, false, { id: x.id, mode: 'edit', record: x });
+  $('s-reminder-list').replaceChildren(...upcoming.map((r) => reminderItem(r, { showLogin: true, open: true, onButton: cancelReminder, onEdit: editUpcoming })));
   $('s-reminder-list').classList.toggle('hidden', !upcoming.length);
   $('s-reminder-empty').classList.toggle('hidden', !!upcoming.length);
   $('s-recent-list').replaceChildren(
@@ -2984,6 +3052,8 @@ async function renderReminders() {
         open: true,
         note: `Sent ${whenText(r.shownAt || r.at)}`,
         button: 'Remove',
+        editLabel: 'Edit',
+        onEdit: (x) => openReminder(null, false, { id: x.id, mode: 'again', record: x }), // set it to run again, or repeat
         onButton: async (x) => {
           await window.api.removeReminder(x.id);
           renderReminders();
@@ -2994,7 +3064,7 @@ async function renderReminders() {
   $('s-recent-wrap').classList.toggle('hidden', !recent.length);
   const e = current();
   const mine = e ? upcoming.filter((r) => r.loginId === e.id) : [];
-  $('v-reminder-list').replaceChildren(...mine.map((r) => reminderItem(r, { onButton: cancelReminder })));
+  $('v-reminder-list').replaceChildren(...mine.map((r) => reminderItem(r, { onButton: cancelReminder, onEdit: editUpcoming })));
   $('v-reminders').classList.toggle('hidden', !mine.length);
   if (!$('edit-pane').classList.contains('hidden')) renderEditorReminders();
 }
@@ -3014,7 +3084,7 @@ function resetEditorReminders() {
 function renderEditorReminders() {
   const existing = editingId ? reminderCache.upcoming.filter((r) => r.loginId === editingId && !editorReminders.removed.has(r.id)) : [];
   const items = [
-    ...existing.map((r) => reminderItem(r, { onButton: cancelReminder })),
+    ...existing.map((r) => reminderItem(r, { onButton: cancelReminder, onEdit: (x) => openReminder(null, false, { id: x.id, mode: 'edit', record: x }) })),
     ...editorReminders.pending.map((r) =>
       reminderItem(r, {
         note: `${whenText(r.at)} · new`,
