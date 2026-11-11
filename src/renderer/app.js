@@ -1903,7 +1903,21 @@ notesEd.addEventListener('keydown', (e) => {
   }
   if (e.key !== 'Tab') return;
   const td = notesCell();
-  if (!td) return;
+  if (!td) {
+    // Outside a table, Tab adds space (instead of jumping to the next button); in a list it indents the item.
+    const sel = getSelection();
+    const el = sel.rangeCount ? nodeEl(sel.getRangeAt(0).startContainer) : null;
+    const li = el && el.closest('li');
+    if (li && notesEd.contains(li)) {
+      e.preventDefault();
+      document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+    } else if (!e.shiftKey) {
+      e.preventDefault();
+      if (!sel.isCollapsed) sel.collapseToStart(); // (never replaces what's selected)
+      document.execCommand('insertText', false, '    ');
+    } // Shift+Tab elsewhere still moves on to the previous control
+    return;
+  }
   e.preventDefault();
   const cells = [...td.closest('table').querySelectorAll('td')];
   const i = cells.indexOf(td);
@@ -2895,6 +2909,9 @@ function setReminderWhen(w) {
   });
   $('reminder-timer').classList.toggle('hidden', w !== 'timer');
   $('reminder-date').classList.toggle('hidden', w !== 'date');
+  // Repeating only makes sense for a date: a timer is always once.
+  $('reminder-repeat-field').classList.toggle('hidden', w !== 'date');
+  if (w !== 'date') setReminderRepeat('');
   $('reminder-at').min = localInputValue(new Date());
   updateReminderPreview();
 }
@@ -2932,7 +2949,7 @@ function openReminder(entry, forEditor = false, edit = null) {
   calView = 'days';
   setCalPick(tomorrow);
   setReminderUnit('hours');
-  setReminderWhen('timer');
+  setReminderWhen('date'); // "On a date" is what you see first
   if (edit) {
     // Editing: the message, repeat and time are filled in (a sent reminder starts at 9:00 tomorrow).
     const again = edit.mode === 'again';
@@ -3354,7 +3371,8 @@ if (window.api.platform === 'darwin') {
   document.body.classList.add('mac');
   // Mac shortcuts use ⌘ (and redo is ⇧⌘Z).
   document.querySelectorAll('.menu-item kbd').forEach((k) => {
-    k.textContent = k.textContent === 'Ctrl+Y' ? '⇧⌘Z' : k.textContent.replace('Ctrl+', '⌘');
+    const special = { 'Ctrl+Y': '⇧⌘Z', 'Ctrl+Shift+M': '⇧⌘M', F11: '⌃⌘F' };
+    k.textContent = special[k.textContent] || k.textContent.replace('Ctrl+', '⌘');
   });
 }
 // In full screen the Mac traffic lights disappear, so the logo moves to the edge.
@@ -3372,7 +3390,7 @@ async function showMenu(name) {
   openMenu = name;
   const unlocked = $('lock-screen').classList.contains('hidden');
   document.querySelectorAll('[data-needs="unlocked"]').forEach((b) => (b.disabled = !unlocked));
-  if (name === 'window') $('menu-maximize').textContent = (await window.api.isMaximized()) ? 'Restore size' : 'Maximise';
+  if (name === 'window') $('menu-maximize').querySelector('.menu-label').textContent = (await window.api.isMaximized()) ? 'Restore size' : 'Maximise';
   document.querySelector(`[data-menu="${name}"]`).classList.add('open');
   document.querySelector(`[data-pop="${name}"]`).classList.remove('hidden');
 }

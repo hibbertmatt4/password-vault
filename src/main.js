@@ -380,6 +380,13 @@ function setZoom(value) {
 const stepZoom = (dir) => setZoom(zoomFactor() + dir * ZOOM_STEP);
 
 // Close the window into the tray / menu bar: the vault locks, the app keeps running (updates, reminders).
+// On a Mac, once the window is hidden Password Vault has no Dock icon (so it doesn't look like it's still open
+// with the little dot under it); only its menu bar icon is left, which is where it keeps checking for updates and
+// sending notifications. Opening it again brings the Dock icon back.
+function dockAway() {
+  if (process.platform === 'darwin' && tray && app.dock) app.dock.hide();
+}
+
 function hideToTray() {
   if (win && !win.isDestroyed()) {
     if (process.platform === 'darwin' && win.isFullScreen()) {
@@ -391,12 +398,14 @@ function hideToTray() {
         if (done || w.isDestroyed()) return;
         done = true;
         w.hide();
+        dockAway();
       };
       w.once('leave-full-screen', () => setTimeout(hideNow, 50));
       setTimeout(hideNow, 1500); // in case that never arrives
       w.setFullScreen(false);
     } else {
       win.hide();
+      dockAway();
     }
   }
   lockVault('closed');
@@ -420,6 +429,7 @@ function maybeAutoInstall() {
 }
 
 function showWindow() {
+  if (process.platform === 'darwin' && app.dock) app.dock.show(); // (the Dock icon comes back with the window)
   if (!win || win.isDestroyed()) createWindow();
   if (win.isMinimized()) win.restore();
   win.show();
@@ -567,11 +577,25 @@ function createWindow() {
   });
   // Ctrl / ⌘ with + (or =), - and 0: bigger, smaller, back to normal.
   win.webContents.on('before-input-event', (e, input) => {
-    if (input.type !== 'keyDown' || input.alt) return;
-    if (!(process.platform === 'darwin' ? input.meta : input.control)) return;
-    if (input.key === '+' || input.key === '=') stepZoom(1);
-    else if (input.key === '-' || input.key === '_') stepZoom(-1);
-    else if (input.key === '0') setZoom(1);
+    if (input.type !== 'keyDown') return;
+    const mac = process.platform === 'darwin';
+    const key = String(input.key);
+    // Full screen: F11 on Windows, Control + ⌘ + F on a Mac.
+    if ((!mac && key === 'F11') || (mac && input.control && input.meta && key.toLowerCase() === 'f')) {
+      win.setFullScreen(!win.isFullScreen());
+      return e.preventDefault();
+    }
+    if (input.alt || !(mac ? input.meta : input.control)) return;
+    // Minimise: Ctrl / ⌘ + M. Maximise (or back to normal): Ctrl / ⌘ + Shift + M.
+    if (key.toLowerCase() === 'm') {
+      if (input.shift) win.isMaximized() ? win.unmaximize() : win.maximize();
+      else win.minimize();
+      return e.preventDefault();
+    }
+    // Zoom: Ctrl / ⌘ with + (or =), - and 0.
+    if (key === '+' || key === '=') stepZoom(1);
+    else if (key === '-' || key === '_') stepZoom(-1);
+    else if (key === '0') setZoom(1);
     else return;
     e.preventDefault();
   });
@@ -1029,6 +1053,7 @@ function registerIpc() {
       case 'checkUpdates': return updater.check(true);
       case 'minimize': return w.minimize();
       case 'maximize': return w.isMaximized() ? w.unmaximize() : w.maximize();
+      case 'fullscreen': return w.setFullScreen(!w.isFullScreen());
       case 'close': return w.close();
       case 'quit': return quitFromMenu();
       case 'zoomIn': return stepZoom(1);
@@ -1164,6 +1189,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     applyBackgroundPrefs();
     if (startedHidden && !tray) showWindow(); // never end up running with no window and no tray icon
+    else if (startedHidden) dockAway(); // started quietly at sign-in: just the menu bar icon
     // Reminders: fire any that came due while the app wasn't running, then keep a timer for the next one.
     // Clicking one opens the app (and the login it's about, once unlocked).
     let remindersStarting = true;

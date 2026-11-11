@@ -12,6 +12,8 @@ An offline, encrypted password manager for Windows and Mac.
   - **Highlight:** yellow, green, blue, pink or orange, or **No highlight**.
   - **Layout:** bulleted and numbered lists, and align left, centre or right.
   - **Tables:** click the table button and pick a size from the grid. Inside a table, the same button can insert or delete rows and columns, or delete the table. **Tab** moves to the next cell, and pressing it in the last cell adds a row.
+  - **Tab elsewhere:** adds a few spaces (it never jumps off to the next button); in a list, **Tab** / **Shift+Tab** indent and un-indent the item.
+  - **Look:** selected text is a soft tan, the cursor is green, and clicking into the notes (or any box) gives it a tan outline, to match the rest of the app.
   - **Clear formatting** removes formatting from the selected text.
   - **Shortcuts:** Ctrl/Cmd+B, I, U and Z work as usual. Ctrl/Cmd+Shift+X is strikethrough.
   - **Pasting:** text pasted from Word, Outlook or a web page keeps its bold, italics, underline, colours, sizes, lists and tables. Pictures, links and anything else are removed.
@@ -40,8 +42,8 @@ An offline, encrypted password manager for Windows and Mac.
     - Or open a login and click **Remind me**.
     - Or go to **Settings → Reminders → New reminder** for one that isn't about a login.
   - **When:**
-    - **After a timer:** use − / + and choose minutes, hours, days or weeks.
-    - **On a date:** pick a day on the calendar, set the time with AM / PM, or use a quick pick: **Tomorrow 9 AM**, **Next Monday** or **End of month**.
+    - **On a date** (the first choice, and the one you see by default): pick a day on the calendar, set the time with AM / PM, or use a quick pick: **Tomorrow 9 AM**, **Next Monday** or **End of month**. Only a date can **repeat**, so the Repeat choices appear here.
+    - **After a timer:** use − / + and choose minutes, hours, days or weeks. A timer goes off once, so there are no Repeat choices.
       - **Typing a date:** type it in the box above the calendar and press Enter, e.g. *3/15/2027* (in your computer's date order), *2027-03-15*, *March 15* (the next one coming up), *15 Mar 2027* or *tomorrow*.
       - **Jumping ahead:** click the month name to pick a month and year. The arrows then move a year at a time.
     - The line at the bottom always says exactly when you'll get it.
@@ -158,7 +160,8 @@ If you do have a Mac: install Node.js, then run `npm install` and `npm run dist:
 - **Closing the window:** Password Vault **locks** and keeps running in the **system tray** (Windows, by the clock) or the **menu bar** (Mac). It keeps checking for updates and can notify you.
 - **Full screen on a Mac:** closing or quitting (⌘Q) while the window is full screen first leaves full screen, then hides, so no empty black screen is left behind.
 - **Opening it again:** click the tray icon (Windows) or choose **Open Password Vault** from its menu.
-- **Quitting:** choose **Quit Password Vault** from the same menu. On a Mac, **⌘Q** and **Vault → Quit** do the same as closing the window (Password Vault stays in the menu bar, locked, so updates and reminders keep working); use the menu bar icon's **Quit Password Vault** (or Dock → Quit) to really quit.
+- **Quitting:** choose **Quit Password Vault** from the same menu. On a Mac, **⌘Q** and **Vault → Quit** close the window and also remove the Dock icon (no dot underneath), leaving only the menu bar icon, so Password Vault keeps checking for updates and sending notifications but doesn't look like it's still open. Click the menu bar icon → **Open Password Vault** to bring it (and its Dock icon) back; its **Quit Password Vault** really quits.
+- **Window shortcuts (Windows and Mac):** **Ctrl/⌘+M** minimises, **Ctrl/⌘+Shift+M** maximises (and restores), and **F11** (Windows) or **⌃⌘F** (Mac) toggles full screen. They're also in the **Window** menu.
 - **Starting at sign-in:** by default it also starts quietly in the tray when you sign in to your computer, so update notifications arrive even if you don't open it.
 - **Turning these off:** **Settings → Background & startup**.
 

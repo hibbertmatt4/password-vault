@@ -47,8 +47,9 @@
       <div class="menu-root">
         <button type="button" class="menu-top" data-menu="window">Window</button>
         <div class="menu-pop hidden" data-pop="window" role="menu">
-          <button type="button" class="menu-item" data-action="minimize">Minimise</button>
-          <button type="button" class="menu-item" data-action="maximize" id="menu-maximize">Maximise</button>
+          <button type="button" class="menu-item" data-action="minimize">Minimise <kbd>Ctrl+M</kbd></button>
+          <button type="button" class="menu-item" data-action="maximize" id="menu-maximize"><span class="menu-label">Maximise</span> <kbd>Ctrl+Shift+M</kbd></button>
+          <button type="button" class="menu-item" data-action="fullscreen">Full screen <kbd>F11</kbd></button>
           <div class="menu-sep"></div>
           <button type="button" class="menu-item" data-action="close">Close window</button>
         </div>
@@ -547,8 +548,8 @@
       <div class="field">
         <label>When</label>
         <div class="segmented fill" role="radiogroup" aria-label="When">
-          <button type="button" role="radio" data-when="timer">After a timer</button>
           <button type="button" role="radio" data-when="date">On a date</button>
+          <button type="button" role="radio" data-when="timer">After a timer</button>
         </div>
       </div>
       <!-- After a timer: "Remind me in [ − 1 + ] hours" -->
@@ -609,7 +610,7 @@
           </div>
         </div>
       </div>
-      <div class="field">
+      <div id="reminder-repeat-field" class="field">
         <label>Repeat</label>
         <div class="segmented fill repeat-choices" role="radiogroup" aria-label="Repeat">
           <button type="button" role="radio" data-repeat="">Never</button>
