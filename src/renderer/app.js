@@ -2954,7 +2954,9 @@ function renderUpdate() {
       text.classList.add('ok');
       break;
     case 'available':
-      text.textContent = `Version ${s.version} is available.`;
+      text.textContent = s.manual
+        ? `Version ${s.version} is available. It couldn’t update itself${s.detail ? ` (${s.detail})` : ''}, so click Download to get it.`
+        : `Version ${s.version} is available.`;
       action.textContent = s.manual ? 'Download' : 'Update now';
       show(action);
       break;
@@ -2989,7 +2991,7 @@ function renderUpdate() {
     $('banner-title').textContent = 'Update available';
     // "manual": this copy can't replace itself (e.g. a Mac app run from the disk image), so it links to the download
     $('banner-text').textContent = s.manual
-      ? `Version ${s.version} is out (you have ${s.currentVersion}). Download it, then drag it into Applications. (Once Password Vault is in your Applications folder it can update itself.)`
+      ? `Version ${s.version} is out (you have ${s.currentVersion}). Download it, then drag it into Applications.${s.detail ? ` (Automatic update didn’t work: ${s.detail}.)` : ''}`
       : `Version ${s.version} is ready (you have ${s.currentVersion}).`;
     $('banner-action').textContent = s.manual ? 'Download' : 'Update now';
   } else if (s.state === 'downloading') {

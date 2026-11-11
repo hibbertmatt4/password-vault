@@ -81,7 +81,22 @@ function notify(version, title, body) {
 function init(sendToRenderer) {
   send = sendToRenderer;
   // Leftovers of a previous Mac update (the unpacked app is a few hundred MB).
-  if (IS_MAC) fs.rm(path.join(app.getPath('userData'), 'update'), { recursive: true, force: true }, () => {});
+  if (IS_MAC) {
+    try {
+      fs.rmSync(path.join(app.getPath('userData'), 'update'), { recursive: true, force: true });
+    } catch {
+      /* in use: cleaned next time */
+    }
+    try {
+      const target = fs.readFileSync(failMarker(), 'utf8').trim();
+      if (target && !versionAtLeast(app.getVersion(), target)) {
+        macManualOnly = true; // the last automatic install couldn't replace the app
+        logLine(`mac: the last automatic install (to ${target}) failed; using the download page`);
+      } else fs.rmSync(failMarker(), { force: true });
+    } catch {
+      /* no marker */
+    }
+  }
   autoUpdater.autoDownload = false; // downloads are started by download() below
   autoUpdater.autoInstallOnAppQuit = true; // a downloaded update also installs when you next quit
   autoUpdater.logger = null;
@@ -102,7 +117,7 @@ function init(sendToRenderer) {
   autoUpdater.on('update-available', (info) => {
     logLine(`update available: ${info.version}`);
     latestInfo = info;
-    setStatus({ state: 'available', version: info.version, manual: false });
+    setStatus({ state: 'available', version: info.version, manual: false, detail: null });
     // Fetch it quietly in the background; the app then installs it by itself while it's closed into the tray.
     download();
   });
@@ -224,10 +239,14 @@ function macZipFor(info) {
 async function downloadMac() {
   const bundle = replaceableBundle();
   const zip = macZipFor(latestInfo);
-  if (!bundle || !zip) {
+  if (!bundle || !zip || macManualOnly) {
     // Can't update in place: send them to the download page, once.
-    logLine(`mac: cannot update in place (bundle ${bundle || 'not replaceable'}, zip ${zip ? 'found' : 'missing'})`);
-    setStatus({ state: 'available', manual: true });
+    logLine(`mac: cannot update in place (bundle ${bundle || 'not replaceable'}, zip ${zip ? 'found' : 'missing'}, earlier swap failed: ${macManualOnly})`);
+    setStatus({
+      state: 'available',
+      manual: true,
+      detail: macManualOnly ? 'the last automatic install could not replace the app' : !bundle ? 'Password Vault is not in a folder it can update, such as Applications' : 'the release has no download for it',
+    });
     return status;
   }
   const dir = path.join(app.getPath('userData'), 'update');
@@ -240,14 +259,17 @@ async function downloadMac() {
   const total = Number(res.headers.get('content-length')) || zip.size || 0;
   const hash = crypto.createHash('sha512');
   const out = fs.createWriteStream(zipPath);
+  let streamError = null; // (an unhandled stream error would otherwise crash the app instead of being reported)
+  out.on('error', (e) => (streamError = e));
   let got = 0;
   let lastPercent = -1;
   const reader = res.body.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (streamError) throw streamError;
     hash.update(value);
-    if (!out.write(value)) await new Promise((r) => out.once('drain', r));
+    if (!out.write(value)) await new Promise((resolve, reject) => (out.once('drain', resolve), out.once('error', reject)));
     got += value.length;
     const percent = total ? Math.min(99, Math.floor((got / total) * 100)) : 0;
     if (percent !== lastPercent) {
@@ -255,7 +277,8 @@ async function downloadMac() {
       setStatus({ state: 'downloading', percent });
     }
   }
-  await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
+  if (streamError) throw streamError;
+  await new Promise((resolve, reject) => (out.once('error', reject), out.end(resolve)));
   if (hash.digest('base64') !== zip.sha512) throw new Error('sha512 checksum mismatch');
   // Unpack, then check it looks like the app before trusting it.
   const unpacked = path.join(dir, 'new');
@@ -273,15 +296,31 @@ async function downloadMac() {
 
 // Waits for this app to quit, swaps the new app in, and opens it. Kept very small and defensive:
 // if the swap fails, the old app is put back.
+// If the swap doesn't work (e.g. no permission to change the app), it leaves a note, so the app stops trying
+// to update itself and offers the download page instead of reopening the old version over and over.
 const MAC_INSTALL_SCRIPT = `#!/bin/bash
-PID="$1"; DEST="$2"; NEW="$3"
+PID="$1"; DEST="$2"; NEW="$3"; MARK="$4"; VER="$5"
 for i in $(seq 1 150); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
 OLD="$DEST.old-$$"
-if mv "$DEST" "$OLD"; then
-  if /usr/bin/ditto "$NEW" "$DEST"; then rm -rf "$OLD"; else rm -rf "$DEST"; mv "$OLD" "$DEST"; fi
+OK=0
+if mv "$DEST" "$OLD" 2>/dev/null; then
+  if /usr/bin/ditto "$NEW" "$DEST"; then OK=1; rm -rf "$OLD"; else rm -rf "$DEST"; mv "$OLD" "$DEST"; fi
 fi
+[ "$OK" = 1 ] || echo "$VER" > "$MARK"
 /usr/bin/open "$DEST"
 `;
+const failMarker = () => path.join(app.getPath('userData'), 'update-failed.txt');
+let macManualOnly = false; // an automatic install failed for the version we're on: use the download page instead
+
+// 1.2.3 >= 1.2.0 ?
+function versionAtLeast(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return true;
+}
 
 function installMac(auto) {
   if (!macReady || !fs.existsSync(macReady.newApp)) {
@@ -292,7 +331,7 @@ function installMac(auto) {
   fs.writeFileSync(script, MAC_INSTALL_SCRIPT, { mode: 0o755 });
   logLine(`mac: installing${auto ? ' (automatic)' : ''}`);
   installHooks(auto);
-  const child = spawn('/bin/bash', [script, String(process.pid), macReady.bundle, macReady.newApp], { detached: true, stdio: 'ignore' });
+  const child = spawn('/bin/bash', [script, String(process.pid), macReady.bundle, macReady.newApp, failMarker(), String(status.version || '')], { detached: true, stdio: 'ignore' });
   child.unref();
   setTimeout(() => app.quit(), 150);
 }
@@ -310,9 +349,17 @@ async function download() {
     try {
       await downloadMac();
     } catch (err) {
-      logLine(`mac download failed: ${err && err.message ? err.message : err}`);
-      setStatus({ state: 'error', error: friendlyError(err, { willRetry: isServerBusy(err) }) });
-      if (isServerBusy(err)) retryTimer = setTimeout(() => status.state === 'error' && download(), RETRY_LATER_MS);
+      const msg = String((err && err.message) || err);
+      logLine(`mac download failed: ${(err && err.stack) || msg}`);
+      if (isServerBusy(err) || /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|net::ERR|network/i.test(msg)) {
+        // No connection / GitHub busy: say so, and try again later.
+        setStatus({ state: 'error', error: friendlyError(err, { willRetry: true }) });
+        retryTimer = setTimeout(() => status.state === 'error' && download(), RETRY_LATER_MS);
+      } else {
+        // Anything else: don't leave the Mac stuck. Offer the download page instead (with a notification), and
+        // say why, so it can be fixed.
+        setStatus({ state: 'available', manual: true, detail: msg.replace(/\s+/g, ' ').slice(0, 160) });
+      }
     } finally {
       downloadInProgress = false;
     }
