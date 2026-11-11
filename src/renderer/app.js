@@ -864,12 +864,17 @@ function sortedFiltered() {
 const BRANDS = window.BRAND_ICONS || [];
 const brandById = new Map(BRANDS.map((b) => [b.id, b]));
 const squash = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const brandByName = new Map(BRANDS.map((b) => [squash(b.title), b]));
 for (const b of BRANDS) for (const a of b.alias || []) if (!brandById.has(a)) brandById.set(a, b); // e.g. td.com → TD Bank
+// The library holds every logo (to search and choose), but only the common ones (`a`) are used for the automatic
+// logo, so an everyday word as a login's name never picks a logo by accident.
+const autoBrands = BRANDS.filter((b) => b.a);
+const autoById = new Map(autoBrands.map((b) => [b.id, b]));
+for (const b of autoBrands) for (const a of b.alias || []) if (!autoById.has(a)) autoById.set(a, b);
+const autoByName = new Map(autoBrands.map((b) => [squash(b.title), b]));
 
 // Without a chosen icon, show a known logo when the name or website matches one (e.g. "GitHub", "netflix.com").
 function autoBrand(entry) {
-  const byTitle = brandByName.get(squash(entry.title)) || brandById.get(squash(entry.title));
+  const byTitle = autoByName.get(squash(entry.title)) || autoById.get(squash(entry.title));
   if (byTitle) return byTitle;
   let host = '';
   try {
@@ -878,7 +883,7 @@ function autoBrand(entry) {
     return null;
   }
   const name = host.split('.').slice(-2, -1)[0];
-  return name ? brandById.get(name) || brandByName.get(name) || null : null;
+  return name ? autoById.get(name) || autoByName.get(name) || null : null;
 }
 
 // Light brand colours (e.g. Snapchat yellow) get a dark logo; dark ones get a white logo.
@@ -2382,9 +2387,14 @@ function renderLogoGrid() {
   const q = squash($('logo-search').value);
   const grid = $('logo-grid');
   grid.replaceChildren();
-  const list = BRANDS.filter(
-    (b) => !q || squash(b.title).includes(q) || b.id.includes(q) || (b.alias || []).some((a) => a.includes(q))
+  // With nothing typed: the everyday ones. Typing searches the whole library (thousands of logos).
+  const matches = BRANDS.filter(
+    (b) => (q ? squash(b.title).includes(q) || b.id.includes(q) || (b.alias || []).some((a) => a.includes(q)) : b.a)
   );
+  // Names that start with what was typed come first.
+  if (q) matches.sort((a, b) => Number(squash(b.title).startsWith(q)) - Number(squash(a.title).startsWith(q)));
+  const LIMIT = q ? 300 : 600; // (drawing thousands of tiles at once would be slow)
+  const list = matches.slice(0, LIMIT);
   for (const b of list) {
     const cell = document.createElement('button');
     cell.type = 'button';
@@ -2396,12 +2406,15 @@ function renderLogoGrid() {
     cell.addEventListener('click', () => chooseIcon({ type: 'brand', id: b.id }));
     grid.appendChild(cell);
   }
-  if (!list.length) {
+  const note = (text) => {
     const p = document.createElement('p');
     p.className = 'hint';
-    p.textContent = 'No logo with that name. Try Upload to add your own image.';
+    p.textContent = text;
     grid.appendChild(p);
-  }
+  };
+  if (!list.length) note('No logo with that name. Try Upload to add your own image.');
+  else if (!q) note(`These are the everyday ones. Type a name to search all ${BRANDS.length.toLocaleString()} logos.`);
+  else if (matches.length > LIMIT) note(`Showing the first ${LIMIT} of ${matches.length.toLocaleString()}. Type more of the name to narrow it down.`);
 }
 $('logo-search').addEventListener('input', renderLogoGrid);
 

@@ -77,11 +77,11 @@ An offline, encrypted password manager for Windows and Mac.
   - **Deleting a folder** never deletes its logins or the folders inside it; they move up a level.
   - Folders, including empty ones, sync between your computers.
 - **Icons:** click **Icon** next to the name to choose:
-  - **Logos:** almost 300 brands: banks and payment apps, streaming and subscriptions, photo and video editing, databases, airlines, shops and more.
+  - **Logos:** about 3,500 brands. With nothing typed you see the everyday ones (about 480: banks and payment apps, shops, streaming and subscriptions, business and company-formation services such as Plaid, Bloomberg, Amazon Seller, Delaware.gov, RentCast, Northwest Registered Agent, LEI and Design.com, photo and video editing, databases, airlines and more). **Type a name to search all of them**; names that start with what you typed come first.
   - **Emoji:** pick one, or type or paste any emoji.
   - **Upload:** your own image. It's cropped to a square, made small and stored encrypted in your vault, so it syncs with everything else.
   - **Letter:** the first letter of the name.
-- **Automatic logos:** if you don't choose an icon, a matching logo is shown automatically when the name or website matches a known brand (e.g. "GitHub" or `netflix.com`).
+- **Automatic logos:** if you don't choose an icon, a matching logo is shown automatically when the name or website matches a well-known brand (e.g. "GitHub", `netflix.com` or `corp.delaware.gov`). Only the everyday ones do this, so a login called "Home" never gets a logo by accident; the rest you choose yourself in the picker.
 
 Brand logos come from [Simple Icons](https://simpleicons.org) (CC0). Brand names and logos are trademarks of their owners and are only used to label your own accounts. Some big names aren't in Simple Icons (e.g. SoFi, Capital One, Chime, Hulu, Microsoft); these get a lettered badge in the brand's colour instead. You can always use **Upload** for the real logo.
 

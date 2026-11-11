@@ -89,25 +89,153 @@ const BADGES = [
   ['xfinity', 'Xfinity', '6138F5', 'X', ['comcast']],
 ];
 
-for (const [id] of BADGES) {
-  if (SLUGS.includes(id)) throw new Error(`badge "${id}" clashes with a Simple Icons logo`);
-}
+// More business, shop and service names that Simple Icons doesn't carry. Same lettered badges. (Colours are
+// close approximations; use Upload for the exact logo.)
+BADGES.push(
+  // business & company formation
+  ['amazonseller', 'Amazon Seller', 'FF9900', 'a', ['sellercentral']],
+  ['delawaregov', 'Delaware.gov', '1D4F91', 'DE', ['delaware']],
+  ['delawareecorp', 'Delaware E-Corp', '0B3C74', 'eCorp', ['ecorp']],
+  ['rentcast', 'RentCast', '1E40AF', 'RC'],
+  ['northwest', 'Northwest Registered Agent', '1B5E3F', 'NW', ['northwestregisteredagent']],
+  ['lei', 'LEI (GLEIF)', '0072BC', 'LEI', ['gleif']],
+  ['bloomberg', 'Bloomberg', '000000', 'B'],
+  ['plaid', 'Plaid', '111111', 'P'],
+  ['designcom', 'Design.com', '5B3DF5', 'D', ['design']],
+  ['irs', 'IRS', '0B3D91', 'IRS'],
+  ['uspto', 'USPTO', '0B3A6F', 'PTO'],
+  ['sba', 'SBA', '003875', 'SBA'],
+  ['samgov', 'SAM.gov', '1B3A67', 'SAM'],
+  ['legalzoom', 'LegalZoom', '2F6FB0', 'LZ'],
+  ['zenbusiness', 'ZenBusiness', '2B2D7E', 'ZB'],
+  ['bizee', 'Bizee (Incfile)', 'F26B21', 'bz', ['incfile']],
+  ['harvardbusiness', 'Harvard Business Services', 'A41E34', 'HBS'],
+  ['registeredagentsinc', 'Registered Agents Inc', '1F3A5F', 'RAI'],
+  ['ctcorporation', 'CT Corporation', '003C71', 'CT', ['ctcorp']],
+  ['doola', 'doola', '6C4BFF', 'd'],
+  ['rocketlawyer', 'Rocket Lawyer', '1F4B99', 'RL'],
+  ['carta', 'Carta', '0E7C7B', 'C'],
+  ['docusign', 'DocuSign', 'FFCC22', 'DS'],
+  ['dropboxsign', 'Dropbox Sign', '0061FF', 'DS', ['hellosign']],
+  ['pandadoc', 'PandaDoc', '4CAF50', 'pd'],
+  ['freshbooks', 'FreshBooks', '0075DD', 'FB'],
+  ['rippling', 'Rippling', 'FEBB2E', 'R'],
+  ['deel', 'Deel', '15357A', 'deel'],
+  ['mercury', 'Mercury', '5266EB', 'M'],
+  ['bluevine', 'BlueVine', '2B3FE0', 'bv'],
+  ['relay', 'Relay', '0D7A4D', 'R'],
+  ['novo', 'Novo', '5E34F5', 'N'],
+  ['ramp', 'Ramp', 'E4F222', 'R'],
+  ['billcom', 'Bill', '0B2A4A', 'bill', ['bill']],
+  ['turbotax', 'TurboTax', 'D52B1E', 'TT'],
+  ['hrblock', 'H&R Block', '00A758', 'HR'],
+  ['microsoftazure', 'Microsoft Azure', '0078D4', 'Az', ['azure']],
+  ['ibm', 'IBM', '1F70C1', 'IBM'],
+  ['powerbi', 'Power BI', 'F2C811', 'PBI'],
+  ['monday', 'monday.com', 'FF3D57', 'm'],
+  ['smartsheet', 'Smartsheet', '0E6DC8', 'S'],
+  ['segment', 'Segment', '52BD94', 'S'],
+  ['amplitude', 'Amplitude', '1E61F0', 'A'],
+  ['ahrefs', 'Ahrefs', '0070F3', 'a'],
+  ['moz', 'Moz', '0099DB', 'M'],
+  ['sproutsocial', 'Sprout Social', '59CB59', 'S'],
+  ['fastmail', 'Fastmail', '0067B9', 'FM'],
+  ['bluehost', 'Bluehost', '2065D1', 'bh'],
+  ['dreamhost', 'DreamHost', '0073EC', 'DH'],
+  ['hostgator', 'HostGator', 'FFC20E', 'HG'],
+  ['siteground', 'SiteGround', '5A3AE0', 'SG'],
+  ['weebly', 'Weebly', '1A8FFF', 'W'],
+  ['jotform', 'Jotform', 'FF6100', 'J'],
+  ['toasttab', 'Toast', 'FF4C00', 'T', ['toast']],
+  ['clover', 'Clover', '37B24D', 'C'],
+  ['lightspeed', 'Lightspeed', 'E4002B', 'L'],
+  ['opentable', 'OpenTable', 'DA3743', 'OT'],
+  ['resy', 'Resy', 'FF5F5F', 'R'],
+  ['angi', 'Angi', 'FF6153', 'A'],
+  ['taskrabbit', 'TaskRabbit', '00B9A9', 'TR'],
+  // investing & crypto
+  ['kraken', 'Kraken', '5741D9', 'K'],
+  ['gemini', 'Gemini', '00DCFA', 'G'],
+  ['wealthfront', 'Wealthfront', '4840BB', 'W'],
+  ['public', 'Public', '000000', 'P'],
+  ['interactivebrokers', 'Interactive Brokers', 'D81222', 'IB', ['ibkr']],
+  ['tastytrade', 'tastytrade', 'E8283E', 'tt'],
+  ['lendingclub', 'LendingClub', '0033A0', 'LC'],
+  // shops & stores
+  ['alibaba', 'Alibaba', 'FF6A00', 'Ali'],
+  ['staples', 'Staples', 'CC0000', 'S'],
+  ['officedepot', 'Office Depot', 'CC0000', 'OD'],
+  ['kohls', "Kohl's", '000000', 'K', ['kohls']],
+  ['nordstrom', 'Nordstrom', '1C1C1C', 'N'],
+  ['sephora', 'Sephora', '000000', 'S'],
+  ['ulta', 'Ulta Beauty', 'F26B1D', 'U'],
+  ['wayfair', 'Wayfair', '7B189F', 'W'],
+  ['temu', 'Temu', 'FB7701', 'T'],
+  ['shein', 'SHEIN', '000000', 'S'],
+  ['overstock', 'Overstock', 'D32F2F', 'O'],
+  ['microcenter', 'Micro Center', 'E6392A', 'MC'],
+  ['bhphoto', 'B&H Photo', '5A2D82', 'B&H', ['bhphotovideo']],
+  ['kroger', 'Kroger', '0C4DA2', 'K'],
+  ['albertsons', 'Albertsons', '0C5DA5', 'A'],
+  ['safeway', 'Safeway', 'E31837', 'S'],
+  ['publix', 'Publix', '3E7D32', 'P'],
+  ['aldi', 'ALDI', '0A2C6B', 'ALDI'],
+  ['traderjoes', "Trader Joe's", 'C8102E', 'TJ'],
+  ['wholefoods', 'Whole Foods', '00674B', 'WF'],
+  ['cvs', 'CVS', 'CC0000', 'CVS'],
+  ['walgreens', 'Walgreens', 'E31837', 'W'],
+  ['petco', 'Petco', '0056A4', 'P'],
+  ['petsmart', 'PetSmart', '0057A8', 'PS'],
+  ['chewy', 'Chewy', '1C49C2', 'C'],
+  ['lululemon', 'lululemon', 'D31F26', 'L'],
+  ['gap', 'Gap', '0C2B4E', 'GAP'],
+  ['hm', 'H&M', 'E50010', 'H&M'],
+  ['michaels', 'Michaels', 'ED1B2F', 'M'],
+  ['joann', 'JOANN', '006B3F', 'J'],
+  ['dollargeneral', 'Dollar General', 'FFD200', 'DG'],
+  ['dollartree', 'Dollar Tree', '1F8F3B', 'DT'],
+  ['tjmaxx', 'TJ Maxx', 'C8102E', 'TJX'],
+  ['marshalls', 'Marshalls', '1D4C8F', 'M'],
+  ['ross', 'Ross', 'AA0000', 'Ross'],
+  ['basspro', 'Bass Pro Shops', '006838', 'BP'],
+  ['rei', 'REI', '1C4F2E', 'REI'],
+  ['dickssportinggoods', "Dick's Sporting Goods", '006B3F', 'DSG'],
+  ['carmax', 'CarMax', 'FFCB05', 'CM'],
+  ['carvana', 'Carvana', '00AEEF', 'C'],
+  ['mercari', 'Mercari', 'FF0211', 'M'],
+  ['poshmark', 'Poshmark', '7F0353', 'P'],
+  ['depop', 'Depop', 'FF2300', 'd'],
+  ['thredup', 'thredUP', '0D1F48', 'tU'],
+  ['vinted', 'Vinted', '09B1BA', 'V'],
+  ['offerup', 'OfferUp', '00AB80', 'O'],
+  ['craigslist', 'craigslist', '5A2D82', 'CL'],
+  ['realtor', 'Realtor.com', 'D92228', 'R'],
+  ['redfin', 'Redfin', 'A02021', 'RF']
+);
+
+// What the whole library holds: every Simple Icons logo, plus the badges. `a` marks the ones used for the
+// automatic logo (a login called "Netflix" or on netflix.com); the rest are found by searching in the picker, so
+// an everyday word never gets a logo by accident.
+const AUTO_MORE = `
+xero gusto adp brex expensify zoho zendesk intercom hubspot twilio sendgrid webflow zapier airtable loom calendly
+typeform surveymonkey qualtrics clickup basecamp bitbucket netlify supabase mongodb databricks tableau looker metabase
+mixpanel hotjar googleanalytics semrush hootsuite buffer linktree carrd ghost cloudways kinsta wpengine porkbun
+shopee newegg ikea autozone oreilly yelp thumbtack nextdoor fedex ups dhl usps aliexpress woocommerce bigcommerce
+99designs shutterstock invoiceninja crunchbase indeed glassdoor upwork fiverr toptal gumroad kickstarter opensea
+googlecloud sap vmware cisco dell hp lenovo samsung sony nvidia amd intel tesla ford toyota honda bmw mercedes volkswagen
+`.trim().split(/\s+/);
 
 const all = Object.values(si).filter((i) => i && i.slug);
 const bySlug = new Map(all.map((i) => [i.slug, i]));
-const icons = [];
-for (const slug of SLUGS) {
-  const i = bySlug.get(slug);
-  if (!i) {
-    console.warn('not in simple-icons:', slug);
-    continue;
-  }
-  icons.push({ id: slug, title: i.title, hex: i.hex, path: i.path });
-}
+const autoSet = new Set([...SLUGS, ...AUTO_MORE]);
+for (const slug of autoSet) if (!bySlug.has(slug)) console.warn('not in simple-icons:', slug);
+
+const icons = all.map((i) => ({ id: i.slug, title: i.title, hex: i.hex, path: i.path, ...(autoSet.has(i.slug) ? { a: 1 } : {}) }));
 const ids = new Set(icons.map((i) => i.id));
 for (const [id, title, hex, text, alias] of BADGES) {
   if (ids.has(id)) continue; // a real logo already covers it
-  icons.push(alias ? { id, title, hex, text, alias } : { id, title, hex, text });
+  ids.add(id);
+  icons.push({ id, title, hex, text, ...(alias ? { alias } : {}), a: 1 });
 }
 icons.sort((a, b) => a.title.localeCompare(b.title));
 
@@ -116,4 +244,4 @@ const out = `// Generated by scripts/build-brand-icons.js from Simple Icons (CC0
 window.BRAND_ICONS = ${JSON.stringify(icons)};
 `;
 fs.writeFileSync(path.join(__dirname, '..', 'src', 'renderer', 'brand-icons.js'), out);
-console.log(`wrote ${icons.length} brand icons (${Math.round(out.length / 1024)} KB)`);
+console.log(`wrote ${icons.length} brand icons (${Math.round(out.length / 1024)} KB), ${icons.filter((i) => i.a).length} for automatic matching`);
