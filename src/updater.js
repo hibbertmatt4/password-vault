@@ -83,7 +83,7 @@ function init(sendToRenderer) {
   // Leftovers of a previous Mac update (the unpacked app is a few hundred MB).
   if (IS_MAC) {
     try {
-      fs.rmSync(path.join(app.getPath('userData'), 'update'), { recursive: true, force: true });
+      removeDir(path.join(app.getPath('userData'), 'update'));
     } catch {
       /* in use: cleaned next time */
     }
@@ -210,6 +210,23 @@ async function check(manual = true) {
 }
 
 // ---------- Mac: downloading and installing by ourselves ----------
+// Delete a folder, including an unpacked app. Inside Electron, a normal delete treats the app's `app.asar` file as a
+// folder and fails ("ENOTDIR: not a directory, rmdir …/app.asar"), which is what stopped every Mac update. So
+// switch Electron's archive handling off for the delete, and if that still fails use the system's own rm.
+function removeDir(p) {
+  const before = process.noAsar;
+  process.noAsar = true;
+  try {
+    fs.rmSync(p, { recursive: true, force: true });
+    return;
+  } catch (err) {
+    if (process.platform !== 'darwin') throw err;
+  } finally {
+    process.noAsar = before;
+  }
+  require('child_process').execFileSync('/bin/rm', ['-rf', p]);
+}
+
 const run = (cmd, args) =>
   new Promise((resolve, reject) => execFile(cmd, args, { maxBuffer: 8 * 1024 * 1024 }, (err, out) => (err ? reject(err) : resolve(out))));
 
@@ -250,7 +267,7 @@ async function downloadMac() {
     return status;
   }
   const dir = path.join(app.getPath('userData'), 'update');
-  fs.rmSync(dir, { recursive: true, force: true });
+  removeDir(dir);
   fs.mkdirSync(dir, { recursive: true });
   const zipPath = path.join(dir, zip.name);
   setStatus({ state: 'downloading', percent: 0, error: null, manual: false });
