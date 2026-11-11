@@ -744,6 +744,7 @@ async function renderSync(status) {
   $('sync-path').title = s.folder;
   $('sync-path').classList.toggle('hidden', !s.synced);
   $('sync-open-folder').classList.toggle('hidden', !s.synced);
+  $('sync-now').classList.toggle('hidden', !s.synced);
   $('sync-setup').textContent = s.synced ? 'Change folder' : 'Set up sync';
   $('sync-stop').classList.toggle('hidden', !s.synced);
   $('sync-how').classList.toggle('hidden', !s.synced);
@@ -800,6 +801,20 @@ window.api.onNotifyChanged((s) => {
 });
 $('sync-setup').addEventListener('click', () => openSyncModal('enable'));
 $('sync-open-folder').addEventListener('click', () => window.api.syncShowFolder());
+$('sync-now').addEventListener('click', async () => {
+  const b = $('sync-now');
+  b.disabled = true;
+  b.textContent = 'Syncing…';
+  try {
+    const status = await window.api.syncNow();
+    await refreshEntries();
+    renderSync(status);
+    toast('Synced with your other computers');
+  } finally {
+    b.disabled = false;
+    b.textContent = 'Sync now';
+  }
+});
 $('sync-stop').addEventListener('click', async () => {
   const sure = await ask({
     title: 'Stop syncing?',
@@ -851,6 +866,7 @@ async function openApp() {
   $('search').value = '';
   renderList();
   showPane(null);
+  showSavedNotice();
 }
 
 function sortedFiltered() {
@@ -901,6 +917,17 @@ function brandTile(brand) {
   div.className = 'avatar brand-logo';
   div.style.background = '#' + brand.hex;
   div.title = brand.title;
+  if (brand.img) {
+    // the brand's real logo (a small picture stored in the app), filling the tile
+    div.classList.add('brand-img');
+    const img = document.createElement('img');
+    img.src = 'data:image/png;base64,' + brand.img;
+    img.alt = '';
+    img.draggable = false;
+    div.style.background = '#fff';
+    div.appendChild(img);
+    return div;
+  }
   if (brand.text) {
     // a lettered badge for brands with no drawn logo (e.g. SoFi, Capital One)
     div.classList.add('brand-badge', 'len-' + Math.min(brand.text.length, 4));
@@ -987,7 +1014,7 @@ const ICON = {
 };
 
 // ---------- floating menu (right-click, folder click, sidebar click) ----------
-function popupMenu(x, y, items) {
+function popupMenu(x, y, items, opts = {}) {
   const menu = $('ctx-menu');
   menu.replaceChildren();
   for (const it of items) {
@@ -1003,6 +1030,7 @@ function popupMenu(x, y, items) {
     b.type = 'button';
     b.className = 'menu-option' + (it.danger ? ' danger' : '') + (it.selected ? ' selected' : '');
     b.setAttribute('role', 'menuitem');
+    b.disabled = !!it.disabled;
     if (it.icon) b.insertAdjacentHTML('afterbegin', it.icon);
     if (it.depth) b.prepend(menuIndent(it.depth));
     b.appendChild(Object.assign(document.createElement('span'), { className: 'label', textContent: it.text }));
@@ -1018,8 +1046,9 @@ function popupMenu(x, y, items) {
   const r = menu.getBoundingClientRect();
   menu.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
   menu.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
-  const first = menu.querySelector('button');
-  if (first) first.focus({ preventScroll: true });
+  // (the text-editing menu leaves the cursor where it is, so Cut / Copy / Paste act on the right text)
+  const first = menu.querySelector('button:not(:disabled)');
+  if (first && !opts.noFocus) first.focus({ preventScroll: true });
 }
 function closeMenu() {
   hide($('ctx-menu'));
@@ -1707,6 +1736,7 @@ function openEditor(entry, kind) {
   editingIcon = entry ? entry.icon || null : null;
   updateEditorIcon();
   updateStrength();
+  editorBaseline = editorSnapshot(); // (to tell later whether anything was changed)
   showPane('edit-pane');
   $('e-title').focus();
 }
@@ -2072,6 +2102,60 @@ notesEd.addEventListener('contextmenu', () => {
   const sel = getSelection();
   const hasSelection = (sel.rangeCount && !sel.isCollapsed) || editMulti.ranges().length > 1;
   window.api.setNotesContext({ canHide: hasSelection || !!secretAround(), unhide: !hasSelection && !!secretAround() });
+});
+// ---------- right-click in any text box: the app's own menu ----------
+// (The main process sends what it knows: the misspelled word and suggestions, what can be cut / copied / pasted.)
+let lastContext = { x: 0, y: 0, el: null };
+document.addEventListener('contextmenu', (e) => (lastContext = { x: e.clientX, y: e.clientY, el: e.target }), true);
+const EDIT_ICON = {
+  cut: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 7.5 20 17M8.2 16.5 20 7"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>',
+  paste: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="16" rx="2.5"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h4"/></svg>',
+  all: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2.5" stroke-dasharray="3 3"/></svg>',
+  hide: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg>',
+};
+window.api.onEditMenu((info) => {
+  const target = lastContext.el && lastContext.el.closest && lastContext.el.closest('input, textarea, [contenteditable="true"]');
+  const inNotes = target === notesEd;
+  // Put the cursor / selection back where it was (opening the menu may have moved the focus), then act.
+  const back = () => {
+    if (inNotes) focusNotes();
+    else if (target) target.focus();
+  };
+  const edit = (action) => async () => {
+    back();
+    await window.api.menuAction(action);
+  };
+  const items = [];
+  if (info.word) {
+    for (const s of info.suggestions || [])
+      items.push({
+        text: s,
+        run: async () => {
+          back();
+          await window.api.spellReplace(s);
+        },
+      });
+    if (!(info.suggestions || []).length) items.push({ text: 'No spelling suggestions', disabled: true, run: () => {} });
+    items.push({
+      text: 'Add to dictionary',
+      run: async () => {
+        back();
+        await window.api.spellAdd(info.word);
+      },
+    });
+    items.push('-');
+  }
+  items.push(
+    { text: 'Cut', icon: EDIT_ICON.cut, disabled: !info.flags.canCut, run: edit('cut') },
+    { text: 'Copy', icon: EDIT_ICON.copy, disabled: !info.flags.canCopy, run: edit('copy') },
+    { text: 'Paste', icon: EDIT_ICON.paste, disabled: !info.flags.canPaste, run: edit('paste') }
+  );
+  if (info.hide && inNotes) {
+    items.push('-', { text: info.hide.unhide ? 'Unhide' : 'Hide (like a password)', icon: EDIT_ICON.hide, run: () => toggleSecret() });
+  }
+  items.push('-', { text: 'Select all', icon: EDIT_ICON.all, run: edit('selectAll') });
+  popupMenu(lastContext.x, lastContext.y, items, { noFocus: true });
 });
 window.api.onNotesAction((action) => {
   if (action === 'toggleSecret' && !$('edit-pane').classList.contains('hidden')) toggleSecret();
@@ -2551,11 +2635,40 @@ async function generateInto() {
 }
 $('g-btn').addEventListener('click', generateInto);
 
+// What's in the editor right now, to tell whether anything was changed since it was opened.
+const editorSnapshot = () =>
+  JSON.stringify([
+    editingKind,
+    $('e-title').value,
+    $('e-username').value,
+    $('e-password').value,
+    $('e-url').value,
+    RichNotes.sanitize($('e-notes').innerHTML),
+    $('e-folder').value,
+    editingIcon,
+    editorFiles.map((f) => f.id),
+    editorReminders.pending.length,
+  ]);
+let editorBaseline = '';
+const editorOpen = () => !$('edit-pane').classList.contains('hidden') && !$('app-screen').classList.contains('hidden');
+const editorDirty = () => editorOpen() && editorSnapshot() !== editorBaseline;
+
 $('edit-pane').addEventListener('submit', async (e) => {
   e.preventDefault();
+  await saveEditor();
+});
+
+/**
+ * Save what's in the editor. `auto`: the app is about to close or restart (e.g. for an update), so nothing is
+ * asked or shown, an empty name becomes "Untitled", and it never needs the user.
+ */
+async function saveEditor({ auto = false } = {}) {
   if (!$('e-title').value.trim()) {
-    $('e-title').focus();
-    return toast('Please give this entry a name');
+    if (!auto) {
+      $('e-title').focus();
+      return toast('Please give this entry a name');
+    }
+    $('e-title').value = 'Untitled';
   }
   // Notes: plain text always (search, older versions of the app), plus the cleaned formatting if there is any.
   const notesHtml = RichNotes.sanitize($('e-notes').innerHTML);
@@ -2574,13 +2687,37 @@ $('edit-pane').addEventListener('submit', async (e) => {
     folder: $('e-folder').value,
     icon: editingIcon, // null = automatic (matching logo or first letter)
   });
-  if (saved && saved.locked) return; // master password changed on another computer; lock screen explains
-  if (saved && saved.ok === false) return toast(saved.error || 'Couldn’t save this login');
+  if (saved && saved.locked) return null; // master password changed on another computer; lock screen explains
+  if (saved && saved.ok === false) {
+    if (!auto) toast(saved.error || 'Couldn’t save this login');
+    return null;
+  }
   const added = await applyEditorReminders(saved);
+  if (auto) return { saved: true, title: saved.title };
   await loadData();
   toast(added ? `Saved, with ${added} new reminder${added === 1 ? '' : 's'}` : 'Saved');
   selectEntry(saved.id);
+  return { saved: true, title: saved.title };
+}
+
+// The app is about to close or restart for an update: save an unfinished login / note first, so nothing is lost.
+window.api.onFlush(async () => {
+  try {
+    if (!editorDirty()) return { saved: false };
+    // a brand-new, completely empty entry isn't worth keeping
+    if (!editingId && !$('e-title').value.trim() && !$('e-username').value && !$('e-password').value && !$('e-url').value && !$('e-notes').textContent.trim() && !editorFiles.length) {
+      return { saved: false };
+    }
+    return (await saveEditor({ auto: true })) || { saved: false };
+  } catch {
+    return { saved: false };
+  }
 });
+// After the restart: say what was saved.
+async function showSavedNotice() {
+  const notice = await window.api.takeNotice();
+  if (notice) toast(notice);
+}
 
 async function deleteLogin(e) {
   if (!e) return;

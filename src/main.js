@@ -39,6 +39,37 @@ function watchVault() {
   fs.watchFile(watchedPath, { interval: 2000 }, () => checkForRemoteChanges());
 }
 
+// ---------- iCloud Drive on a Mac ----------
+// iCloud brings a file changed on another computer down lazily: until something looks at the folder (like opening it
+// in Finder), the Mac can keep showing the old vault. So while the vault is in iCloud Drive, ask for the latest copy
+// ourselves, regularly, and when the window opens or you press "Sync now".
+const inICloud = () => process.platform === 'darwin' && !!vault && /\/Library\/Mobile Documents\//.test(vault.filePath);
+let brctlLogged = false;
+function nudgeICloud() {
+  if (!inICloud()) return;
+  const file = vault.filePath;
+  try {
+    // looking at the folder is what makes iCloud refresh it
+    const dir = path.dirname(file);
+    for (const name of fs.readdirSync(dir)) {
+      try {
+        fs.statSync(path.join(dir, name));
+      } catch {
+        /* still arriving */
+      }
+    }
+  } catch {
+    /* no access yet */
+  }
+  // and ask for the newest copy of the vault file itself
+  require('child_process').execFile('/usr/bin/brctl', ['download', file], { timeout: 15000 }, (err, _out, stderr) => {
+    if (err && !brctlLogged) {
+      brctlLogged = true;
+      syncLog(`iCloud: asking for the latest copy didn't work: ${String(stderr || err.message).trim().slice(0, 200)}`);
+    }
+  });
+}
+
 function checkForRemoteChanges() {
   if (!vault) return;
   if (!vault.isUnlocked()) return checkWhileLocked();
@@ -414,10 +445,39 @@ function hideToTray() {
 
 // Quit from the app's own menu. On a Mac, ⌘Q (and Vault ▸ Quit) behave like closing the window, so
 // Password Vault stays in the menu bar and keeps checking for updates; the menu bar icon's Quit really quits.
-function quitFromMenu() {
-  if (process.platform === 'darwin' && tray && prefs().keepRunning) return hideToTray();
+async function quitFromMenu() {
+  if (process.platform === 'darwin' && tray && prefs().keepRunning) return flushWork().then(hideToTray);
+  await flushWork();
   quitting = true;
   app.quit();
+}
+
+// Before the app closes or restarts on purpose (quit, closing the window, installing an update), ask the page to
+// save any login or note that's half-written, and wait for its answer (a few seconds at most). Returns what the
+// page said ({ saved, title }) or null.
+function flushWork(timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    if (!win || win.isDestroyed() || !win.isVisible() || !vault || !vault.isUnlocked()) return resolve(null);
+    let finished = false;
+    const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      ipcMain.removeListener('app:flushed', onAnswer);
+      clearTimeout(timer);
+      if (result && result.saved) settings.set('savedNotice', `Saved “${result.title || 'your unfinished entry'}” for you before closing.`);
+      resolve(result || null);
+    };
+    const onAnswer = (_e, result) => finish(result);
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    ipcMain.on('app:flushed', onAnswer);
+    win.webContents.send('app:flush');
+  });
+}
+
+// A user-chosen "Restart to update" (saves unfinished work first).
+async function restartToUpdate() {
+  await flushWork();
+  updater.install();
 }
 
 // A downloaded update installs by itself once nobody is using the app (window closed into the tray, so the vault
@@ -448,7 +508,7 @@ function rebuildTrayMenu() {
   const up = updater.getStatus();
   const updateItem =
     up.state === 'downloaded'
-      ? { label: `Restart to update to ${up.version}`, click: () => updater.install() }
+      ? { label: `Restart to update to ${up.version}`, click: () => restartToUpdate() }
       : up.state === 'available'
         ? { label: `Update available (${up.version})…`, click: () => showWindow() }
         : {
@@ -467,7 +527,8 @@ function rebuildTrayMenu() {
       { type: 'separator' },
       {
         label: 'Quit Password Vault',
-        click: () => {
+        click: async () => {
+          await flushWork();
           quitting = true;
           app.quit();
         },
@@ -557,14 +618,23 @@ function createWindow() {
   // Closing the window keeps Password Vault running in the tray / menu bar (vault locked),
   // so it can keep checking for updates and send notifications.
   win.on('close', (e) => {
-    if (quitting || !prefs().keepRunning) return;
+    if (quitting) return;
     e.preventDefault();
-    hideToTray();
+    // (an unfinished login / note is saved first: closing locks the vault, or quits)
+    flushWork().then(() => {
+      if (prefs().keepRunning) return hideToTray();
+      quitting = true;
+      app.quit();
+    });
   });
   win.on('hide', () => setTimeout(maybeAutoInstall, 1500));
   win.on('show', () => {
     win.webContents.send('window:shown');
     updater.checkSoon(2000);
+    if (inICloud()) {
+      nudgeICloud(); // opening the window: make sure it's showing what the other computer saved
+      setTimeout(checkForRemoteChanges, 3000);
+    }
   });
   win.on('focus', () => updater.checkSoon(2000));
   // Mac hides the traffic lights in full screen, so the title bar can use that space.
@@ -623,28 +693,24 @@ function spellingMenu(contents) {
     if (!p.isEditable) return;
     const hide = notesContext && Date.now() - notesContext.at < 1500 && notesContext.canHide ? notesContext : null;
     notesContext = null;
-    const items = [];
-    if (p.misspelledWord) {
-      for (const s of p.dictionarySuggestions.slice(0, 5)) items.push({ label: s, click: () => contents.replaceMisspelling(s) });
-      if (!items.length) items.push({ label: 'No spelling suggestions', enabled: false });
-      items.push({ label: 'Add to dictionary', click: () => contents.session.addWordToSpellCheckerDictionary(p.misspelledWord) });
-      items.push({ type: 'separator' });
+    // The menu is drawn by the page itself, in the app's own style (see onEditMenu in app.js).
+    if (!contents.isDestroyed()) {
+      contents.send('edit:menu', {
+        word: p.misspelledWord || '',
+        suggestions: (p.dictionarySuggestions || []).slice(0, 5),
+        flags: { canCut: !!p.editFlags.canCut, canCopy: !!p.editFlags.canCopy, canPaste: !!p.editFlags.canPaste },
+        hide: hide ? { unhide: !!hide.unhide } : null,
+      });
     }
-    items.push(
-      { role: 'cut', enabled: p.editFlags.canCut },
-      { role: 'copy', enabled: p.editFlags.canCopy },
-      { role: 'paste', enabled: p.editFlags.canPaste }
-    );
-    if (hide) {
-      items.push(
-        { type: 'separator' },
-        { label: hide.unhide ? 'Unhide' : 'Hide (like a password)', click: () => contents.send('notes:action', 'toggleSecret') }
-      );
-    }
-    items.push({ type: 'separator' }, { role: 'selectAll' });
-    Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(contents) });
   });
 }
+// The page's spelling choices: replace the word that was right-clicked, or add it to the dictionary.
+ipcMain.handle('spell:replace', (e, word) => {
+  e.sender.replaceMisspelling(String(word));
+});
+ipcMain.handle('spell:add', (e, word) => {
+  e.sender.session.addWordToSpellCheckerDictionary(String(word));
+});
 
 function lockVault(reason) {
   if (vault && vault.isUnlocked()) {
@@ -839,6 +905,13 @@ function registerIpc() {
   });
 
   ipcMain.handle('sync:showFolder', () => shell.showItemInFolder(vault.filePath));
+  // "Sync now": fetch the newest copy (iCloud), then merge whatever is there.
+  ipcMain.handle('sync:now', async () => {
+    nudgeICloud();
+    await sleep(inICloud() ? 3000 : 200);
+    checkForRemoteChanges();
+    return syncStatus();
+  });
 
   ipcMain.handle('vault:unlock', async (_e, password) => {
     if (typeof password !== 'string') return { ok: false, error: 'Invalid password.' };
@@ -1112,7 +1185,13 @@ function registerIpc() {
   ipcMain.handle('update:status', () => updater.getStatus());
   ipcMain.handle('update:check', () => updater.check(true));
   ipcMain.handle('update:download', () => updater.download());
-  ipcMain.handle('update:install', () => updater.install());
+  ipcMain.handle('update:install', () => restartToUpdate());
+  // A one-time message for after the restart ("Saved … for you before closing").
+  ipcMain.handle('notice:take', () => {
+    const notice = settings.get('savedNotice') || null;
+    if (notice) settings.set('savedNotice', null);
+    return notice;
+  });
 
   ipcMain.handle('clipboard:copy', (_e, text) => {
     const value = String(text);
@@ -1215,6 +1294,12 @@ if (!app.requestSingleInstanceLock()) {
       if (powerMonitor.getSystemIdleTime() >= AUTO_LOCK_SECONDS) lockVault('idle');
       checkForRemoteChanges(); // backup in case a file-change notice was missed
     }, 15000);
+    // iCloud Drive: keep asking for the latest copy of the vault, and look at what arrived a moment later.
+    setInterval(() => {
+      if (!inICloud()) return;
+      nudgeICloud();
+      setTimeout(checkForRemoteChanges, 3000);
+    }, 30000);
     powerMonitor.on('lock-screen', () => lockVault('system'));
     powerMonitor.on('suspend', () => lockVault('system'));
     // Look for updates soon after the computer wakes up or is unlocked (timers pause during sleep).

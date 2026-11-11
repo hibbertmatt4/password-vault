@@ -70,10 +70,18 @@ html { -webkit-tap-highlight-color: transparent; accent-color: var(--green); }
 .mono { font-family: var(--font-mono); }
 .error { color: var(--negative); min-height: 1.5em; font-size: 13px; }
 
-.scroll-thin { scrollbar-width: thin; scrollbar-color: rgba(49, 61, 42, 0.2) transparent; }
-.scroll-thin::-webkit-scrollbar { width: 6px; }
-.scroll-thin::-webkit-scrollbar-thumb { background: rgba(49, 61, 42, 0.18); border-radius: 4px; }
-.sidebar .scroll-thin::-webkit-scrollbar-thumb, .entry-list::-webkit-scrollbar-thumb { background: rgba(244, 224, 202, 0.18); }
+/* Scroll bars everywhere: one slim, rounded bar in the app's colours. (Don't set the standard `scrollbar-width` /
+   `scrollbar-color` anywhere: they make the browser ignore all of this and draw its plain default bar.) */
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(49, 61, 42, 0.22); border-radius: 10px; border: 4px solid transparent; background-clip: padding-box; min-height: 40px;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: var(--tan); border-width: 3px; }
+*::-webkit-scrollbar-corner { background: transparent; }
+/* on the dark sidebar the bar is cream */
+.entry-list::-webkit-scrollbar-thumb { background-color: rgba(244, 224, 202, 0.22); }
+.entry-list::-webkit-scrollbar-thumb:hover { background-color: var(--tan); }
 
 /* 3. CONTROLS ------------------------------------------------------------ */
 input, textarea, button { font: inherit; }
@@ -91,6 +99,11 @@ input, textarea {
 }
 input:focus, textarea:focus { border-color: var(--tan); box-shadow: 0 0 0 3px rgba(197, 168, 130, 0.18); }
 input:focus-visible, textarea:focus-visible { outline: none; }
+/* An input that sits inside a bordered box (the typed date, the time, the − 1 + stepper, the hour / minute wheels):
+   the box shows the focus, with the same rounded corners, instead of the input drawing its own ring inside. */
+.cal-type-wrap input:focus, .time-input:focus, .stepper input:focus, .wheel-input:focus { box-shadow: none; border-color: transparent; outline: none; }
+.cal-type-wrap:focus-within, .time-row:focus-within, .stepper:focus-within { border-color: var(--tan); box-shadow: 0 0 0 3px rgba(197, 168, 130, 0.18); }
+.wheel:focus-within { background: rgba(197, 168, 130, 0.18); }
 input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 0.8; }
 textarea { resize: vertical; }
 input[type='checkbox'] { width: auto; padding: 0; accent-color: var(--green); }
@@ -188,7 +201,7 @@ button.eye-btn svg { width: 20px; height: 20px; display: block; }
 button.add-btn { background: var(--tan); border-color: var(--tan); color: var(--green); font-weight: 600; padding: 0 14px; }
 button.add-btn:hover { background: #d4b993; border-color: #d4b993; }
 
-.entry-list { list-style: none; padding: 0 10px 10px; overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: rgba(244, 224, 202, 0.2) transparent; }
+.entry-list { list-style: none; padding: 0 10px 10px; overflow-y: auto; flex: 1; }
 .entry-list li {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; margin-bottom: 2px;
@@ -577,6 +590,9 @@ button.bio-inline svg { color: var(--tan); }
 /* fixed logo sizes per tile size (percentages collapsed to 0 inside the sidebar's flex layout) */
 .avatar.brand-logo svg { width: 18px; height: 18px; flex: none; display: block; }
 .avatar-slot.big .avatar.brand-logo svg { width: 32px; height: 32px; }
+/* real logo pictures */
+.avatar.brand-img, .entry-list .avatar.brand-img, .detail .avatar.brand-img, .modal .avatar.brand-img { padding: 0; background: #fff; border-color: rgba(49, 61, 42, 0.08); }
+.avatar.brand-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* lettered badges (brands with no drawn logo): sized to the tile through em, shorter text bigger */
 .avatar.brand-badge { font-family: var(--font-body); font-weight: 700; letter-spacing: -0.03em; line-height: 1; white-space: nowrap; }
 .avatar.brand-badge.len-1 { font-size: 17px; }
@@ -994,6 +1010,7 @@ button.menu-option {
 }
 button.menu-option:hover, button.menu-option:focus-visible { background: rgba(197, 168, 130, 0.18); border: none; outline: none; }
 button.menu-option.selected { background: rgba(197, 168, 130, 0.15); font-weight: 500; color: var(--green); }
+button.menu-option:disabled, button.menu-option:disabled:hover { opacity: 0.4; cursor: default; background: transparent; }
 button.menu-option.danger { color: var(--negative); }
 button.menu-option.danger:hover { background: rgba(192, 57, 43, 0.08); }
 button.menu-option svg { flex: none; color: var(--tan); }

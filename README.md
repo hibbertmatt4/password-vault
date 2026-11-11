@@ -13,6 +13,8 @@ An offline, encrypted password manager for Windows and Mac.
   - **Layout:** bulleted and numbered lists, and align left, centre or right.
   - **Tables:** click the table button and pick a size from the grid. Inside a table, the same button can insert or delete rows and columns, or delete the table. **Tab** moves to the next cell, and pressing it in the last cell adds a row.
   - **Tab elsewhere:** adds a few spaces (it never jumps off to the next button); in a list, **Tab** / **Shift+Tab** indent and un-indent the item.
+  - **Right-click menu:** right-clicking in the notes (or any text box) opens the app's own cream-and-tan menu (not the system's grey one): spelling suggestions and **Add to dictionary** for a misspelled word, **Cut / Copy / Paste**, **Hide (like a password)** or **Unhide** in the notes, and **Select all**.
+  - **Scroll bars:** every scroll bar in the app (the main page, the sidebar, notes, lists and pop-ups) is the same slim, rounded one in the app's colours.
   - **Look:** selected text is a soft tan, the cursor is green, and clicking into the notes (or any box) gives it a tan outline, to match the rest of the app.
   - **Clear formatting** removes formatting from the selected text.
   - **Shortcuts:** Ctrl/Cmd+B, I, U and Z work as usual. Ctrl/Cmd+Shift+X is strikethrough.
@@ -85,7 +87,7 @@ An offline, encrypted password manager for Windows and Mac.
   - **Letter:** the first letter of the name.
 - **Automatic logos:** if you don't choose an icon, a matching logo is shown automatically when the name or website matches a well-known brand (e.g. "GitHub", `netflix.com` or `corp.delaware.gov`). Only the everyday ones do this, so a login called "Home" never gets a logo by accident; the rest you choose yourself in the picker.
 
-Brand logos come from [Simple Icons](https://simpleicons.org) (CC0). Brand names and logos are trademarks of their owners and are only used to label your own accounts. Some big names aren't in Simple Icons (e.g. SoFi, Capital One, Chime, Hulu, Microsoft); these get a lettered badge in the brand's colour instead. You can always use **Upload** for the real logo.
+Brand logos come from [Simple Icons](https://simpleicons.org) (CC0). Brand names and logos are trademarks of their owners and are only used to label your own accounts. Some big names aren't in Simple Icons (e.g. SoFi, Capital One, Plaid, Hulu, Microsoft, Amazon Seller). For about 150 of them the real logo was fetched once, from the brand's own website (its app icon / favicon, shrunk to a 96-pixel square, saved inside the app by `npm run logos`; the app itself never goes on the internet for logos). A few (Lowe's, IRS, SAM.gov, TurboTax, JOANN, Gap, Dick's, PetSmart, Delaware E-Corp, Kindle, OneDrive, SQL Server, Snapseed, IBM) have no usable picture and keep a lettered badge in the brand's colour. You can always use **Upload** for any logo you prefer.
 
 **Getting back to the blank screen:** click the open login again, click empty space in the sidebar or on the page, or press **Esc**. (An open editor is never closed this way, so you can't lose unsaved changes.)
 
@@ -106,6 +108,9 @@ Backups stay on each computer in the `backups` folder next to the "not syncing" 
 
 ## Syncing between computers
 Your passwords can be shared between your Mac and Windows computers through a cloud drive you already use: **iCloud Drive, OneDrive, Google Drive or Dropbox**. Password Vault finds these automatically. You can also pick any folder your cloud app keeps in sync.
+
+**Changes taking a while to arrive (iCloud Drive on a Mac)**
+iCloud brings a changed file down lazily, so a Mac can keep showing the old vault until something looks at the folder (which is why opening it in Finder made everything appear). While your vault is in iCloud Drive, Password Vault now asks iCloud for the newest copy itself: every 30 seconds, and whenever its window opens. **Settings → Sync between your computers → Sync now** does it straight away and merges what arrived. (If iCloud refuses the request, the reason is written to `logs/sync.log` in Password Vault's data folder.)
 
 **First computer**
 - **New vault:** under **Where to keep your vault**, pick your cloud drive.
@@ -168,6 +173,7 @@ If you do have a Mac: install Node.js, then run `npm install` and `npm run dist:
 ## Updates
 The app checks for new versions when it starts, every 30 minutes, when your computer wakes up, and when you open the window. When one is found:
 - **Both Windows and Mac:** the update downloads by itself in the background, even with the window closed. As soon as the window is closed into the tray / menu bar (so the vault is locked and nothing can be lost) it installs silently and Password Vault starts again quietly, with a notification *"Password Vault was updated"*. You never run an installer or drag anything. If the window is open, the banner offers **Restart & update**, or just close the window.
+- **Your unfinished work is saved first:** if you're in the middle of adding or editing a login or note when you press **Restart & update** (or quit, or close the window), Password Vault saves what you've typed before it closes, so nothing is lost. A brand-new entry with no name is saved as "Untitled", a completely empty new one is dropped, and an entry you didn't change isn't touched. After you unlock again it says what it saved.
 - **Turning it off:** **Settings → Background & startup → Install updates automatically**. Then you choose when with **Restart & update**.
 - **Mac, how it works:** Apple only lets *signed* apps use the standard updater, and this app isn't signed, so Password Vault does it itself. It downloads the release, checks it against the fingerprint (SHA-512) published with it, unpacks it, and a tiny helper swaps the new app in once the old one has quit. This needs Password Vault to be in your **Applications** folder (not running from the disk image). If anything goes wrong (no permission to replace the app, the download can't be unpacked…) it doesn't leave you stuck: you still get the "update available" notification, and Settings and the banner show **Download** with the reason in brackets. If an automatic install ever fails to swap the app in, it remembers and uses **Download** from then on, until you've installed a newer version yourself. The reason for any failure is also written to `logs/updater.log` in Password Vault's data folder (`~/Library/Application Support/Password Vault` on a Mac).
 - **Disk space:** an update needs about 1 GB free while it downloads and unpacks. Password Vault checks first; if there isn't room, it says so in plain words (Settings, and the banner) and tries again at the next check, and it never leaves a half-finished download behind. On a Mac the finished app is moved into place rather than copied, so installing needs no extra space.

@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('api', {
   syncDisable: () => ipcRenderer.invoke('sync:disable'),
   syncUseLocal: () => ipcRenderer.invoke('sync:useLocal'),
   syncShowFolder: () => ipcRenderer.invoke('sync:showFolder'),
+  syncNow: () => ipcRenderer.invoke('sync:now'),
   onSyncStatus: (cb) => ipcRenderer.on('sync:status', (_e, s) => cb(s)),
   bioStatus: () => ipcRenderer.invoke('bio:status'),
   bioEnable: (password) => ipcRenderer.invoke('bio:enable', password),
@@ -57,10 +58,25 @@ contextBridge.exposeInMainWorld('api', {
   clearReminderHistory: () => ipcRenderer.invoke('reminders:clearHistory'),
   // Right-click in the notes: tell the main process whether to add "Hide" / "Unhide" to its menu (sync, so it
   // arrives before the menu is built), and receive the click on it.
+  // The app is about to close or restart: the page saves any unfinished login / note, then answers.
+  onFlush: (cb) =>
+    ipcRenderer.on('app:flush', async () => {
+      let result = { saved: false };
+      try {
+        result = await cb();
+      } catch {
+        /* nothing saved */
+      }
+      ipcRenderer.send('app:flushed', result);
+    }),
+  takeNotice: () => ipcRenderer.invoke('notice:take'),
   getZoom: () => ipcRenderer.invoke('zoom:get'),
   setZoom: (z) => ipcRenderer.invoke('zoom:set', z),
   stepZoom: (dir) => ipcRenderer.invoke('zoom:step', dir),
   onZoom: (cb) => ipcRenderer.on('zoom:changed', (_e, z) => cb(z)),
+  onEditMenu: (cb) => ipcRenderer.on('edit:menu', (_e, info) => cb(info)),
+  spellReplace: (word) => ipcRenderer.invoke('spell:replace', word),
+  spellAdd: (word) => ipcRenderer.invoke('spell:add', word),
   setNotesContext: (state) => ipcRenderer.sendSync('notes:ctx', state),
   onNotesAction: (cb) => ipcRenderer.on('notes:action', (_e, action) => cb(action)),
   missedReminders: () => ipcRenderer.invoke('reminders:missed'),

@@ -1,7 +1,7 @@
 {
   "name": "password-vault",
   "productName": "Password Vault",
-  "version": "1.17.0",
+  "version": "1.19.1",
   "description": "A simple, offline, encrypted password manager for Mac and Windows.",
   "main": "src/main.js",
   "author": "Matt",
@@ -15,6 +15,7 @@
     "dist": "electron-builder",
     "release": "electron-builder --publish always",
     "icons": "node scripts/build-brand-icons.js",
+    "logos": "electron scripts/fetch-brand-logos.js",
     "icon:mac": "electron scripts/make-mac-icon.js"
   },
   "devDependencies": {
