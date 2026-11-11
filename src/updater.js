@@ -163,8 +163,12 @@ function onStatus(fn) {
 // GitHub's file server occasionally answers "504 Gateway Time-out" (or 502/503) for a while.
 const isServerBusy = (err) => /\b50[234]\b|gateway|service unavailable|timed? ?out/i.test(String((err && err.message) || err));
 
+const NO_SPACE = /No space left|ENOSPC|not enough disk space/i;
+
 function friendlyError(err, { willRetry = false } = {}) {
   const msg = String((err && err.message) || err);
+  if (NO_SPACE.test(msg) || (err && err.code === 'ENOSPC'))
+    return 'There isn’t enough free space on this computer to download the update (it needs about 1 GB). Free up some space and Password Vault will try again by itself.';
   if (isServerBusy(err)) {
     return willRetry
       ? "GitHub's download server isn't responding right now. Password Vault will try again automatically in a few minutes."
@@ -227,6 +231,18 @@ function removeDir(p) {
   require('child_process').execFileSync('/bin/rm', ['-rf', p]);
 }
 
+const MIN_FREE_BYTES = 1024 * 1024 * 1024; // an update needs about 1 GB free while it's downloaded and unpacked
+function freeBytes(dir) {
+  try {
+    let p = dir;
+    while (!fs.existsSync(p) && path.dirname(p) !== p) p = path.dirname(p);
+    const s = fs.statfsSync(p);
+    return Number(s.bavail) * Number(s.bsize);
+  } catch {
+    return null; // can't tell: just try
+  }
+}
+
 const run = (cmd, args) =>
   new Promise((resolve, reject) => execFile(cmd, args, { maxBuffer: 8 * 1024 * 1024 }, (err, out) => (err ? reject(err) : resolve(out))));
 
@@ -268,6 +284,12 @@ async function downloadMac() {
   }
   const dir = path.join(app.getPath('userData'), 'update');
   removeDir(dir);
+  // Enough room? The download, then the unpacked app (a few hundred MB) are on disk together for a moment.
+  const need = Math.max(MIN_FREE_BYTES, (zip.size || 0) * 5);
+  const free = freeBytes(dir);
+  if (free !== null && free < need) {
+    throw Object.assign(new Error(`not enough disk space (${Math.round(free / 1048576)} MB free, about ${Math.round(need / 1048576)} MB needed)`), { code: 'ENOSPC' });
+  }
   fs.mkdirSync(dir, { recursive: true });
   const zipPath = path.join(dir, zip.name);
   setStatus({ state: 'downloading', percent: 0, error: null, manual: false });
@@ -315,15 +337,22 @@ async function downloadMac() {
 // if the swap fails, the old app is put back.
 // If the swap doesn't work (e.g. no permission to change the app), it leaves a note, so the app stops trying
 // to update itself and offers the download page instead of reopening the old version over and over.
+// (The new app is moved into place, which needs no extra space on the same disk; copying is only the fallback.)
 const MAC_INSTALL_SCRIPT = `#!/bin/bash
-PID="$1"; DEST="$2"; NEW="$3"; MARK="$4"; VER="$5"
+PID="$1"; DEST="$2"; NEW="$3"; MARK="$4"; VER="$5"; UPD="$6"
 for i in $(seq 1 150); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
 OLD="$DEST.old-$$"
 OK=0
 if mv "$DEST" "$OLD" 2>/dev/null; then
-  if /usr/bin/ditto "$NEW" "$DEST"; then OK=1; rm -rf "$OLD"; else rm -rf "$DEST"; mv "$OLD" "$DEST"; fi
+  if mv "$NEW" "$DEST" 2>/dev/null; then
+    OK=1; rm -rf "$OLD"
+  else
+    rm -rf "$DEST"
+    if /usr/bin/ditto "$NEW" "$DEST"; then OK=1; rm -rf "$OLD"; else rm -rf "$DEST"; mv "$OLD" "$DEST"; fi
+  fi
 fi
 [ "$OK" = 1 ] || echo "$VER" > "$MARK"
+[ -n "$UPD" ] && rm -rf "$UPD"
 /usr/bin/open "$DEST"
 `;
 const failMarker = () => path.join(app.getPath('userData'), 'update-failed.txt');
@@ -348,7 +377,7 @@ function installMac(auto) {
   fs.writeFileSync(script, MAC_INSTALL_SCRIPT, { mode: 0o755 });
   logLine(`mac: installing${auto ? ' (automatic)' : ''}`);
   installHooks(auto);
-  const child = spawn('/bin/bash', [script, String(process.pid), macReady.bundle, macReady.newApp, failMarker(), String(status.version || '')], { detached: true, stdio: 'ignore' });
+  const child = spawn('/bin/bash', [script, String(process.pid), macReady.bundle, macReady.newApp, failMarker(), String(status.version || ''), macReady.dir], { detached: true, stdio: 'ignore' });
   child.unref();
   setTimeout(() => app.quit(), 150);
 }
@@ -368,7 +397,16 @@ async function download() {
     } catch (err) {
       const msg = String((err && err.message) || err);
       logLine(`mac download failed: ${(err && err.stack) || msg}`);
-      if (isServerBusy(err) || /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|net::ERR|network/i.test(msg)) {
+      // Never leave a half-done update behind: it can be hundreds of MB, and on a nearly full disk it makes things worse.
+      try {
+        removeDir(path.join(app.getPath('userData'), 'update'));
+      } catch {
+        /* cleaned next time */
+      }
+      if (NO_SPACE.test(msg) || (err && err.code === 'ENOSPC')) {
+        // Say what's wrong in plain words; the next check (every 30 minutes) tries again by itself.
+        setStatus({ state: 'error', error: friendlyError(err) });
+      } else if (isServerBusy(err) || /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|net::ERR|network/i.test(msg)) {
         // No connection / GitHub busy: say so, and try again later.
         setStatus({ state: 'error', error: friendlyError(err, { willRetry: true }) });
         retryTimer = setTimeout(() => status.state === 'error' && download(), RETRY_LATER_MS);
@@ -428,6 +466,7 @@ function install({ auto = false } = {}) {
 }
 
 module.exports = {
+  _friendly: friendlyError, // (for tests)
   setNotificationFilter: (fn) => (allowNotification = fn),
   setInstallHooks: (fn) => (installHooks = fn),
   setAutoInstallCheck: (fn) => (autoInstallNow = fn),

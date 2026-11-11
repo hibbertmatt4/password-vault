@@ -143,6 +143,10 @@ The Mac app isn't signed by Apple, so macOS blocks it the first time. Go to **Sy
 
 If you do have a Mac: install Node.js, then run `npm install` and `npm run dist:mac` in this folder.
 
+## Showing passwords
+- **Hides itself:** when you press **Show** on a password (a login's page or the editor) or on a hidden part of a note, it hides again by itself after **30 seconds**. Pressing **Hide**, opening another login, or locking hides it sooner.
+- **Changing the time:** **Settings → Showing passwords** has **Unlimited**, **30 seconds**, **1 minute**, **3 minutes**, **5 minutes** and **Custom**. Custom has **hours : minutes : seconds** wheels: scroll the mouse wheel over one, click its ▲ ▼, or type a number. Choose at least 1 second (use **Unlimited** for no limit). It's a setting for this computer.
+
 ## Running in the background
 - **Closing the window:** Password Vault **locks** and keeps running in the **system tray** (Windows, by the clock) or the **menu bar** (Mac). It keeps checking for updates and can notify you.
 - **Opening it again:** click the tray icon (Windows) or choose **Open Password Vault** from its menu.
@@ -155,6 +159,7 @@ The app checks for new versions when it starts, every 30 minutes, when your comp
 - **Both Windows and Mac:** the update downloads by itself in the background, even with the window closed. As soon as the window is closed into the tray / menu bar (so the vault is locked and nothing can be lost) it installs silently and Password Vault starts again quietly, with a notification *"Password Vault was updated"*. You never run an installer or drag anything. If the window is open, the banner offers **Restart & update**, or just close the window.
 - **Turning it off:** **Settings → Background & startup → Install updates automatically**. Then you choose when with **Restart & update**.
 - **Mac, how it works:** Apple only lets *signed* apps use the standard updater, and this app isn't signed, so Password Vault does it itself. It downloads the release, checks it against the fingerprint (SHA-512) published with it, unpacks it, and a tiny helper swaps the new app in once the old one has quit. This needs Password Vault to be in your **Applications** folder (not running from the disk image). If anything goes wrong (no permission to replace the app, the download can't be unpacked…) it doesn't leave you stuck: you still get the "update available" notification, and Settings and the banner show **Download** with the reason in brackets. If an automatic install ever fails to swap the app in, it remembers and uses **Download** from then on, until you've installed a newer version yourself. The reason for any failure is also written to `logs/updater.log` in Password Vault's data folder (`~/Library/Application Support/Password Vault` on a Mac).
+- **Disk space:** an update needs about 1 GB free while it downloads and unpacks. Password Vault checks first; if there isn't room, it says so in plain words (Settings, and the banner) and tries again at the next check, and it never leaves a half-finished download behind. On a Mac the finished app is moved into place rather than copied, so installing needs no extra space.
 - There's a banner in the app and a dot on **Settings**. Update notifications can be turned off in **Settings → Notifications → App updates**.
 
 You can also go to **Settings → Check for updates**, or use the **Vault → Check for Updates…** menu.

@@ -340,7 +340,13 @@
         }, 1400);
       });
       const body = document.createElement('span');
+      let hideTimer = null; // a shown part hides itself again after the time chosen in Settings
       const render = (shown) => {
+        clearTimeout(hideTimer);
+        if (shown && options.autoHide) {
+          const ms = options.autoHide();
+          if (ms > 0) hideTimer = setTimeout(() => render(false), ms);
+        }
         s.classList.toggle('secret-open', shown);
         s.classList.toggle('secret-hidden', !shown);
         if (shown) body.innerHTML = real; // already cleaned

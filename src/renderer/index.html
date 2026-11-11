@@ -311,6 +311,42 @@
           </div>
         </div>
 
+        <div id="reveal-card" class="card update-card">
+          <div class="card-title">Showing passwords</div>
+          <p class="update-text reveal-intro">When you press <strong>Show</strong> on a password, or on a hidden part of a note, it hides itself again after:</p>
+          <div id="reveal-choices" class="segmented wrap" role="radiogroup" aria-label="How long a shown password stays shown">
+            <button type="button" role="radio" data-sec="0">Unlimited</button>
+            <button type="button" role="radio" data-sec="30">30 seconds</button>
+            <button type="button" role="radio" data-sec="60">1 minute</button>
+            <button type="button" role="radio" data-sec="180">3 minutes</button>
+            <button type="button" role="radio" data-sec="300">5 minutes</button>
+            <button type="button" role="radio" data-sec="custom">Custom</button>
+          </div>
+          <div id="reveal-custom" class="reveal-custom hidden">
+            <div class="wheel" data-part="h">
+              <button type="button" class="wheel-step" data-dir="1" aria-label="More hours">▲</button>
+              <input type="number" class="wheel-input" min="0" max="23" value="0" aria-label="Hours" />
+              <button type="button" class="wheel-step" data-dir="-1" aria-label="Fewer hours">▼</button>
+              <span class="wheel-label">hours</span>
+            </div>
+            <span class="wheel-colon">:</span>
+            <div class="wheel" data-part="m">
+              <button type="button" class="wheel-step" data-dir="1" aria-label="More minutes">▲</button>
+              <input type="number" class="wheel-input" min="0" max="59" value="1" aria-label="Minutes" />
+              <button type="button" class="wheel-step" data-dir="-1" aria-label="Fewer minutes">▼</button>
+              <span class="wheel-label">minutes</span>
+            </div>
+            <span class="wheel-colon">:</span>
+            <div class="wheel" data-part="s">
+              <button type="button" class="wheel-step" data-dir="1" aria-label="More seconds">▲</button>
+              <input type="number" class="wheel-input" min="0" max="59" value="0" aria-label="Seconds" />
+              <button type="button" class="wheel-step" data-dir="-1" aria-label="Fewer seconds">▼</button>
+              <span class="wheel-label">seconds</span>
+            </div>
+          </div>
+          <p id="reveal-summary" class="update-text reveal-summary"></p>
+        </div>
+
         <div id="bg-card" class="card update-card">
           <div class="card-title">Background &amp; startup</div>
           <label class="switch-row">

@@ -815,6 +815,30 @@ button.reminder-cancel { height: 30px; padding: 0 12px; font-size: 12px; flex: n
 .stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button,
 .time-input::-webkit-inner-spin-button, .time-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
+/* Settings → Showing passwords */
+.reveal-intro { margin: -4px 0 12px; }
+.segmented.wrap { flex-wrap: wrap; border-radius: 20px; }
+.segmented.wrap button { padding: 0 14px; }
+.reveal-summary { margin: 12px 0 14px; }
+.reveal-custom {
+  display: flex; align-items: center; justify-content: center; gap: 6px; margin: 16px 0 0; padding: 14px 10px;
+  background: var(--tint-1); border: 1px solid var(--line, rgba(49, 61, 42, 0.08)); border-radius: 14px;
+}
+.wheel { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 8px; border-radius: 12px; cursor: ns-resize; }
+.wheel:hover { background: rgba(197, 168, 130, 0.14); }
+.wheel-input {
+  width: 64px; text-align: center; border: none; background: transparent; padding: 0; height: 40px;
+  font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--green); -moz-appearance: textfield;
+}
+.wheel-input::-webkit-inner-spin-button, .wheel-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+button.wheel-step {
+  width: 44px; height: 22px; padding: 0; border: none; border-radius: 8px; background: transparent;
+  font-size: 11px; color: var(--tan); cursor: pointer;
+}
+button.wheel-step:hover { background: rgba(197, 168, 130, 0.25); color: var(--green); border: none; }
+.wheel-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.wheel-colon { font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--tan); margin-top: -18px; }
+
 /* hover tips (replacing the system's grey ones) */
 .tip {
   position: fixed; z-index: 20000; max-width: 260px; pointer-events: none;

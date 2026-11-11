@@ -567,6 +567,10 @@ async function renderBackground(p) {
   $('bg-login-text').textContent = p.installed
     ? `Starts quietly in the ${mac ? 'menu bar' : 'tray'}, so you get update notifications even if you don't open it.`
     : 'Only available in the installed app.';
+  if (Number.isInteger(p.revealSeconds) && p.revealSeconds !== revealSeconds) {
+    revealSeconds = p.revealSeconds;
+    renderReveal();
+  }
   $('bg-keep').checked = p.keepRunning;
   $('bg-auto').checked = p.autoInstall;
   $('bg-auto-where').textContent = mac ? 'menu bar' : 'tray';
@@ -580,6 +584,103 @@ $('bg-keep').addEventListener('change', async () => {
   renderBackground(p);
   toast(p.keepRunning ? 'Password Vault will keep running when you close the window' : 'Closing the window will quit Password Vault');
 });
+// ---------- Settings → Showing passwords: how long Show stays shown ----------
+let revealSeconds = 30; // 0 = until you hide it yourself
+const REVEAL_PRESETS = [0, 30, 60, 180, 300];
+let revealCustomOpen = false;
+function describeSeconds(s) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const unit = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  return [h && unit(h, 'hour'), m && unit(m, 'minute'), sec && unit(sec, 'second')].filter(Boolean).join(' ');
+}
+const wheels = () => [...document.querySelectorAll('#reveal-custom .wheel')].map((w) => ({ el: w, input: w.querySelector('.wheel-input'), part: w.dataset.part }));
+const wheelValue = (input) => Math.max(0, Math.min(Number(input.max), parseInt(input.value, 10) || 0));
+function wheelSeconds() {
+  const v = Object.fromEntries(wheels().map((w) => [w.part, wheelValue(w.input)]));
+  return v.h * 3600 + v.m * 60 + v.s;
+}
+function fillWheels(seconds) {
+  const parts = { h: Math.floor(seconds / 3600), m: Math.floor((seconds % 3600) / 60), s: seconds % 60 };
+  for (const w of wheels()) w.input.value = String(parts[w.part]);
+}
+function renderReveal(keepWheels) {
+  const isPreset = REVEAL_PRESETS.includes(revealSeconds);
+  const custom = revealCustomOpen || !isPreset;
+  for (const b of document.querySelectorAll('#reveal-choices [data-sec]')) {
+    const on = b.dataset.sec === 'custom' ? custom : !custom && Number(b.dataset.sec) === revealSeconds;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
+  }
+  $('reveal-custom').classList.toggle('hidden', !custom);
+  if (custom && !keepWheels && revealSeconds > 0) fillWheels(revealSeconds);
+  $('reveal-summary').textContent = revealSeconds
+    ? `A shown password hides itself again after ${describeSeconds(revealSeconds)}.`
+    : 'A shown password stays shown until you press Hide or the vault locks.';
+}
+async function setReveal(seconds, keepWheels) {
+  revealSeconds = seconds;
+  renderReveal(keepWheels);
+  await window.api.setPref('revealSeconds', seconds);
+}
+$('reveal-choices').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-sec]');
+  if (!b) return;
+  if (b.dataset.sec === 'custom') {
+    revealCustomOpen = true;
+    if (!wheelSeconds() || REVEAL_PRESETS.includes(revealSeconds)) {
+      if (revealSeconds === 0) fillWheels(60); // unlimited → start the wheels at one minute
+      else fillWheels(revealSeconds);
+    }
+    return setReveal(wheelSeconds() || 60);
+  }
+  revealCustomOpen = false;
+  setReveal(Number(b.dataset.sec));
+});
+// The custom time: hours, minutes and seconds, each a little wheel (scroll over it, click ▲ ▼, or type).
+function changeWheel(w, dir) {
+  const max = Number(w.input.max);
+  let v = wheelValue(w.input) + dir;
+  if (v > max) v = 0; // round and round, like a clock
+  if (v < 0) v = max;
+  w.input.value = String(v);
+  wheelChanged();
+}
+function wheelChanged() {
+  const total = wheelSeconds();
+  if (total < 1) {
+    $('reveal-summary').textContent = 'Choose at least 1 second.';
+    return;
+  }
+  revealCustomOpen = true;
+  setReveal(total, true);
+}
+for (const w of wheels()) {
+  let carry = 0;
+  w.el.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      carry += e.deltaY;
+      if (Math.abs(carry) < 40) return; // trackpads send many tiny scrolls
+      changeWheel(w, carry < 0 ? 1 : -1);
+      carry = 0;
+    },
+    { passive: false }
+  );
+  w.el.querySelectorAll('.wheel-step').forEach((b) => b.addEventListener('click', () => changeWheel(w, Number(b.dataset.dir))));
+  w.input.addEventListener('input', wheelChanged);
+  w.input.addEventListener('change', () => {
+    w.input.value = String(wheelValue(w.input)); // tidy what was typed (e.g. 75 minutes → 59)
+    wheelChanged();
+  });
+}
+window.api.getPrefs().then((p) => {
+  if (Number.isInteger(p.revealSeconds)) revealSeconds = p.revealSeconds;
+  renderReveal();
+});
+
 $('bg-auto').addEventListener('change', async () => {
   const p = await window.api.setPref('autoInstall', $('bg-auto').checked);
   renderBackground(p);
@@ -1458,6 +1559,7 @@ function selectEntry(id) {
     eyebrow.append(document.createTextNode(' · '), chip);
   }
   $('v-username').textContent = e.username || '—';
+  clearTimeout(viewPassTimer);
   $('v-password').textContent = '••••••••••••';
   $('v-password').dataset.revealed = '';
   setRevealButton(false);
@@ -1471,6 +1573,7 @@ function selectEntry(id) {
     notesView.innerHTML = rich; // already cleaned: only formatting tags survive
     // hidden sections show as •••• until you press Show; then each has a Copy button
     RichNotes.maskSecrets(notesView, {
+      autoHide: () => revealSeconds * 1000,
       copy: async (text) => {
         const secs = await window.api.copy(text);
         toast(`Copied — clears in ${secs}s`);
@@ -1486,6 +1589,15 @@ function selectEntry(id) {
   showPane('view-pane');
 }
 
+// A shown password hides itself again after the time chosen in Settings (30 seconds unless changed).
+let viewPassTimer = null;
+function hideViewPassword() {
+  clearTimeout(viewPassTimer);
+  const el = $('v-password');
+  el.dataset.revealed = '';
+  el.textContent = '••••••••••••';
+  setRevealButton(false);
+}
 $('reveal-btn').addEventListener('click', () => {
   const e = current();
   const el = $('v-password');
@@ -1493,6 +1605,8 @@ $('reveal-btn').addEventListener('click', () => {
   el.dataset.revealed = revealed ? '1' : '';
   el.textContent = revealed ? e.password : '••••••••••••';
   setRevealButton(revealed);
+  clearTimeout(viewPassTimer);
+  if (revealed && revealSeconds > 0) viewPassTimer = setTimeout(hideViewPassword, revealSeconds * 1000);
 });
 // The Show / Hide button keeps its eye icon: only the label and which eye is drawn change.
 function setRevealButton(revealed) {
@@ -1541,6 +1655,7 @@ function openEditor(entry, kind) {
   $('e-title').value = entry ? entry.title : '';
   $('e-username').value = entry ? entry.username : '';
   $('e-password').value = entry ? entry.password : '';
+  clearTimeout(editPassTimer);
   $('e-password').type = 'password';
   $('e-reveal').textContent = 'Show';
   $('e-url').value = entry ? entry.url : '';
@@ -2335,10 +2450,19 @@ $('add-btn').addEventListener('click', () => {
 $('edit-btn').addEventListener('click', () => openEditor(current()));
 $('cancel-btn').addEventListener('click', () => (selectedId ? selectEntry(selectedId) : showPane(null)));
 
+let editPassTimer = null;
 $('e-reveal').addEventListener('click', () => {
   const input = $('e-password');
   input.type = input.type === 'password' ? 'text' : 'password';
   $('e-reveal').textContent = input.type === 'password' ? 'Show' : 'Hide';
+  clearTimeout(editPassTimer);
+  // (the same time as for a login's page: Settings → Showing passwords)
+  if (input.type === 'text' && revealSeconds > 0) {
+    editPassTimer = setTimeout(() => {
+      input.type = 'password';
+      $('e-reveal').textContent = 'Show';
+    }, revealSeconds * 1000);
+  }
 });
 
 function updateStrength() {

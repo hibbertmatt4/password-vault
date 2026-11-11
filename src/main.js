@@ -320,6 +320,8 @@ const prefs = () => ({
   keepRunning: settings.get('keepRunning') !== false, // on unless turned off
   openAtLogin: settings.get('openAtLogin') !== false,
   autoInstall: settings.get('autoInstall') !== false, // install a downloaded update while the window is closed
+  // how long a shown password / hidden part of a note stays shown (seconds; 0 = until hidden by hand)
+  revealSeconds: Number.isInteger(settings.get('revealSeconds')) ? settings.get('revealSeconds') : 30,
 });
 
 // Close the window into the tray / menu bar: the vault locks, the app keeps running (updates, reminders).
@@ -930,6 +932,11 @@ function registerIpc() {
   // Settings: keep running in the tray / open at sign-in.
   ipcMain.handle('prefs:get', () => ({ ...prefs(), platform: process.platform, installed: app.isPackaged }));
   ipcMain.handle('prefs:set', (_e, key, value) => {
+    if (key === 'revealSeconds') {
+      const n = Math.round(Number(value));
+      if (Number.isFinite(n) && n >= 0 && n < 86400) settings.set('revealSeconds', n);
+      return { ...prefs(), platform: process.platform, installed: app.isPackaged };
+    }
     if (!['keepRunning', 'openAtLogin', 'autoInstall'].includes(key)) return prefs();
     settings.set(key, !!value);
     applyBackgroundPrefs();
