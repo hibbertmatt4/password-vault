@@ -2040,6 +2040,11 @@ $('notes-toolbar').addEventListener('mousedown', (e) => {
   if (e.target.closest('button')) e.preventDefault();
 });
 const swatch = (cls) => `<span class="swatch ${cls}"></span>`;
+// the bar under the highlight / text color icon shows the color last picked (like Word's)
+const setToolbarBar = (menu, hex) => {
+  const bar = document.querySelector(`#notes-toolbar [data-menu="${menu}"] .tb-bar`);
+  if (bar) bar.style.stroke = hex || '';
+};
 // The color picker, like Word's: an Automatic / No Color choice, then a grid of theme colors and a row of standard ones.
 // (Used for highlights, text color and table fills.)
 function openColorPanel(x, y, { title, none, text = false, onPick }) {
@@ -2049,6 +2054,7 @@ function openColorPanel(x, y, { title, none, text = false, onPick }) {
   panel.replaceChildren();
   const pick = (hex) => () => {
     closeColorPanel();
+    if (hex) RichNotes.registerColor(hex); // (so the page has a rule to draw it)
     onPick(hex);
   };
   if (title) panel.appendChild(Object.assign(document.createElement('div'), { className: 'menu-label', textContent: title }));
@@ -2077,6 +2083,26 @@ function openColorPanel(x, y, { title, none, text = false, onPick }) {
   };
   grid('Theme Colors', RichNotes.THEME_COLORS);
   grid('Standard Colors', [RichNotes.STANDARD_COLORS]);
+  const recent = recentColors();
+  if (recent.length) grid('Recent Colors', [recent]);
+  // "More Colors…": a color square, a hue slider and a hex box, to pick any color at all
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'cp-none cp-more';
+  more.innerHTML = '<span class="cp-none-box cp-rainbow"></span>';
+  more.appendChild(Object.assign(document.createElement('span'), { textContent: 'More Colors…' }));
+  const custom = buildCustomPicker((hex) => {
+    rememberColor(hex);
+    pick(hex)();
+  });
+  custom.classList.add('hidden');
+  more.addEventListener('click', () => {
+    custom.classList.toggle('hidden');
+    if (!custom.classList.contains('hidden')) custom.refresh();
+    const r = panel.getBoundingClientRect();
+    panel.style.top = Math.max(8, Math.min(r.top, window.innerHeight - r.height - 8)) + 'px';
+  });
+  panel.append(more, custom);
   show(panel);
   const r = panel.getBoundingClientRect();
   panel.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
@@ -2085,10 +2111,129 @@ function openColorPanel(x, y, { title, none, text = false, onPick }) {
 function closeColorPanel() {
   hide($('color-panel'));
 }
+// the last few custom colors picked (kept on this computer only)
+function recentColors() {
+  try {
+    const list = JSON.parse(localStorage.getItem('pv-recent-colors') || '[]');
+    return Array.isArray(list) ? list.filter((c) => /^#[0-9a-f]{6}$/.test(c)).slice(0, 10) : [];
+  } catch {
+    return [];
+  }
+}
+function rememberColor(hex) {
+  try {
+    localStorage.setItem('pv-recent-colors', JSON.stringify([hex, ...recentColors().filter((c) => c !== hex)].slice(0, 10)));
+  } catch {
+    // (storage unavailable: the color still gets used, it just isn't listed next time)
+  }
+}
+// Hue / saturation / value ↔ hex, and the custom color picker's controls.
+function hsvToHex(h, s, v) {
+  const f = (n) => {
+    const k = (n + h / 60) % 6;
+    return v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
+  };
+  return '#' + [f(5), f(3), f(1)].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+}
+function hexToHsv(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  let h = 0;
+  if (d) h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h * 60, s: max ? d / max : 0, v: max };
+}
+function buildCustomPicker(onOk) {
+  const box = document.createElement('div');
+  box.className = 'cp-custom';
+  box.innerHTML =
+    '<canvas class="cp-sv" width="247" height="132" aria-label="Pick a shade"></canvas>' +
+    '<input type="range" class="cp-hue" min="0" max="360" step="1" value="210" aria-label="Hue" />' +
+    '<div class="cp-hexrow"><span class="cp-prev"></span><input class="cp-hex" maxlength="7" spellcheck="false" aria-label="Color code" /><button type="button" class="primary cp-ok">OK</button></div>';
+  const canvas = box.querySelector('canvas');
+  const hue = box.querySelector('.cp-hue');
+  const hexInput = box.querySelector('.cp-hex');
+  const prev = box.querySelector('.cp-prev');
+  const ctx = canvas.getContext('2d');
+  let c = { h: 210, s: 0.7, v: 0.85 };
+  const current = () => hsvToHex(c.h, c.s, c.v);
+  const draw = () => {
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.fillStyle = hsvToHex(c.h, 1, 1);
+    ctx.fillRect(0, 0, w, h);
+    const white = ctx.createLinearGradient(0, 0, w, 0);
+    white.addColorStop(0, '#fff');
+    white.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = white;
+    ctx.fillRect(0, 0, w, h);
+    const black = ctx.createLinearGradient(0, 0, 0, h);
+    black.addColorStop(0, 'rgba(0,0,0,0)');
+    black.addColorStop(1, '#000');
+    ctx.fillStyle = black;
+    ctx.fillRect(0, 0, w, h);
+    ctx.beginPath();
+    ctx.arc(c.s * w, (1 - c.v) * h, 6, 0, Math.PI * 2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(c.s * w, (1 - c.v) * h, 7.5, 0, Math.PI * 2);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.stroke();
+  };
+  const refresh = (fromHex) => {
+    draw();
+    hue.value = String(Math.round(c.h));
+    prev.style.backgroundColor = current();
+    if (!fromHex) hexInput.value = current();
+  };
+  const fromPointer = (e) => {
+    const r = canvas.getBoundingClientRect();
+    c.s = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    c.v = 1 - Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    refresh();
+  };
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    fromPointer(e);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (canvas.hasPointerCapture(e.pointerId)) fromPointer(e);
+  });
+  hue.addEventListener('input', () => {
+    c.h = +hue.value;
+    refresh();
+  });
+  hexInput.addEventListener('input', () => {
+    let v = hexInput.value.trim().toLowerCase();
+    if (v && v[0] !== '#') v = '#' + v;
+    if (/^#[0-9a-f]{3}$/.test(v)) v = '#' + [...v.slice(1)].map((ch) => ch + ch).join('');
+    if (!/^#[0-9a-f]{6}$/.test(v)) return;
+    c = hexToHsv(v);
+    refresh(true);
+  });
+  const ok = () => onOk(current());
+  box.querySelector('.cp-ok').addEventListener('click', ok);
+  hexInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      ok();
+    }
+  });
+  box.refresh = () => refresh();
+  return box;
+}
 document.addEventListener('mousedown', (e) => {
   if (!e.target.closest('#color-panel') && !e.target.closest('#notes-toolbar [data-menu="highlight"], #notes-toolbar [data-menu="color"]')) closeColorPanel();
 });
-$('color-panel').addEventListener('mousedown', (e) => e.preventDefault()); // (keeps the cursor in the notes)
+// (keeps the cursor in the notes, except when typing a color code)
+$('color-panel').addEventListener('mousedown', (e) => {
+  if (!e.target.closest('input')) e.preventDefault();
+});
 window.addEventListener('blur', closeColorPanel);
 window.addEventListener('resize', closeColorPanel);
 const btnPos = (b) => {
@@ -2105,9 +2250,22 @@ $('notes-toolbar').addEventListener('click', (e) => {
     const current = $('tb-size-label').textContent;
     popupMenu(x, y, RichNotes.SIZES.map(([text, v]) => ({ text, selected: text === current, run: () => runNotes('fontSize', v) })));
   } else if (b.dataset.menu === 'highlight') {
-    openColorPanel(x, y, { none: 'No Color', onPick: (hex) => runNotes('hiliteColor', hex || 'transparent') });
+    openColorPanel(x, y, {
+      none: 'No Color',
+      onPick: (hex) => {
+        runNotes('hiliteColor', hex || 'transparent');
+        setToolbarBar('highlight', hex);
+      },
+    });
   } else if (b.dataset.menu === 'color') {
-    openColorPanel(x, y, { none: 'Automatic', text: true, onPick: (hex) => runNotes('foreColor', hex || RichNotes.DEFAULT_TEXT) });
+    openColorPanel(x, y, {
+      none: 'Automatic',
+      text: true,
+      onPick: (hex) => {
+        runNotes('foreColor', hex || RichNotes.DEFAULT_TEXT);
+        setToolbarBar('color', hex);
+      },
+    });
   } else if (b.dataset.menu === 'table') {
     const td = notesCell();
     if (!td) return openTablePicker(x, y);
@@ -2367,6 +2525,67 @@ function hideRange(range) {
   range.insertNode(mark);
   return mark;
 }
+// A selection that runs across table cells (or from text into a table) is cut into pieces: one for each cell it
+// touches, and the text outside the tables. Each piece is hidden on its own, so the table's structure is left alone.
+function splitAtCells(range) {
+  const touched = [...notesEd.querySelectorAll('td')].filter((td) => range.intersectsNode(td));
+  const cells = touched.filter((td) => !touched.some((o) => o !== td && o.contains(td)));
+  if (!cells.length) return [range];
+  if (cells.length === 1 && cells[0].contains(range.startContainer) && cells[0].contains(range.endContainer)) return [range];
+  const out = [];
+  const clip = (td) => {
+    const r = document.createRange();
+    r.selectNodeContents(td);
+    if (r.compareBoundaryPoints(Range.START_TO_START, range) < 0) r.setStart(range.startContainer, range.startOffset);
+    if (r.compareBoundaryPoints(Range.END_TO_END, range) > 0) r.setEnd(range.endContainer, range.endOffset);
+    return r;
+  };
+  // the text around the tables is cut at the last / first piece of text next to each table (so a paragraph's hidden
+  // part stays inside that paragraph)
+  const lastTextBefore = (el) => {
+    let last = null;
+    const w = document.createTreeWalker(notesEd, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const p = el.compareDocumentPosition(n);
+      if (p & Node.DOCUMENT_POSITION_PRECEDING) last = n;
+      else if (!(p & Node.DOCUMENT_POSITION_CONTAINED_BY)) break;
+    }
+    return last;
+  };
+  const firstTextAfter = (el) => {
+    const w = document.createTreeWalker(notesEd, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const p = el.compareDocumentPosition(n);
+      if (p & Node.DOCUMENT_POSITION_FOLLOWING && !(p & Node.DOCUMENT_POSITION_CONTAINED_BY)) return n;
+    }
+    return null;
+  };
+  const outside = (a, b) => {
+    if (!a || !b) return;
+    const r = document.createRange();
+    r.setStart(a[0], a[1]);
+    r.setEnd(b[0], b[1]);
+    if (!r.collapsed && r.toString().trim()) out.push(r);
+  };
+  const inTable = (n) => !!(nodeEl(n) && nodeEl(n).closest('td'));
+  let prevTable = null;
+  for (const td of cells) {
+    const table = td.closest('table');
+    if (table !== prevTable) {
+      const before = lastTextBefore(table);
+      const afterPrev = prevTable ? firstTextAfter(prevTable) : null;
+      const from = prevTable ? afterPrev && [afterPrev, 0] : inTable(range.startContainer) ? null : [range.startContainer, range.startOffset];
+      outside(from, before && [before, before.length]);
+      prevTable = table;
+    }
+    out.push(clip(td));
+  }
+  if (!inTable(range.endContainer)) {
+    const after = firstTextAfter(prevTable);
+    outside(after && [after, 0], [range.endContainer, range.endOffset]);
+  }
+  return out;
+}
 // The Hide button and the right-click menu's Hide / Unhide. With several parts picked with Ctrl / ⌘ + double-click,
 // every one of them is hidden.
 function toggleSecret() {
@@ -2386,7 +2605,7 @@ function toggleSecret() {
     sel.addRange(r);
     notesEd.dispatchEvent(new Event('input'));
   } else {
-    const todo = parts.length >= 2 ? parts : [sel.getRangeAt(0)];
+    const todo = (parts.length >= 2 ? parts : [sel.getRangeAt(0)]).flatMap(splitAtCells);
     let last = null;
     // last one first, so the earlier ones aren't disturbed
     for (const range of todo.slice().reverse()) last = hideRange(range) || last;

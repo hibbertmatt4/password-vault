@@ -59,18 +59,27 @@
   const STANDARD_COLORS = ['#c00000', '#ff0000', '#ffc000', '#ffff00', '#92d050', '#00b050', '#00b0f0', '#0070c0', '#002060', '#7030a0'];
   const rgbOf = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
   const PALETTE = [...new Set([...THEME_COLORS.flat(), ...STANDARD_COLORS])];
-  // highlights allowed: the picker's colors, plus the older, smaller set (still shown in notes saved with them)
-  const HIGHLIGHT_BY_RGB = new Map([...HIGHLIGHTS.map((h) => [h[2], h]), ...PALETTE.map((hex) => [rgbOf(hex), [hex, hex, rgbOf(hex)]])]);
-  const FILL_OK = new Set(PALETTE.map((h) => h.slice(1)));
   // The page's security policy stops inline styles, so notes carry plain colors (a style written by the editor, or
-  // data-fill on a table cell) and these rules draw them. Built here, in code, from the same list the picker uses.
-  try {
-    const sheet = new CSSStyleSheet();
-    sheet.replaceSync(PALETTE.map((hex) => `.rich [style*='background-color: ${rgbOf(hex)}'] { background-color: ${hex}; } .rich td[data-fill='${hex.slice(1)}'] { background-color: ${hex}; }`).join('\n'));
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-  } catch {
-    // (older engine: the picker's colors just won't show)
+  // data-fill on a table cell) and a rule per color, made here in code, draws each one. Any color can be used (the
+  // picker's custom colors too): registerColor() adds its rule the first time it is picked or turns up in a note.
+  const colorSheet = (() => {
+    try {
+      const sheet = new CSSStyleSheet();
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      return sheet;
+    } catch {
+      return null; // (older engine: the picker's colors just won't show)
+    }
+  })();
+  const knownColors = new Set();
+  function registerColor(hex) {
+    hex = String(hex).toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(hex) || knownColors.has(hex) || !colorSheet) return;
+    knownColors.add(hex);
+    colorSheet.insertRule(`.rich [style*='background-color: ${rgbOf(hex)}'] { background-color: ${hex}; }`, colorSheet.cssRules.length);
+    colorSheet.insertRule(`.rich td[data-fill='${hex.slice(1)}'] { background-color: ${hex}; }`, colorSheet.cssRules.length);
   }
+  PALETTE.forEach(registerColor);
   const ALIGN = ['center', 'right', 'justify'];
   const MAX_HTML = 8 * 1024 * 1024; // pictures make notes bigger
   const MAX_PICTURE = 3 * 1024 * 1024;
@@ -151,10 +160,13 @@
           const a = /text-align:\s*(center|right|justify)/.exec(style) || [null, (n.getAttribute('align') || '').toLowerCase()];
           if (ALIGN.includes(a[1])) el.setAttribute('style', `text-align: ${a[1]};`);
         }
-        // highlight (only our colours, written exactly as the editor writes them)
+        // highlight (any plain rgb color, rewritten exactly as the editor writes it, so the page's rule for it matches)
         if (tag === 'span') {
-          const bg = /background-color:\s*(rgb\([^)]*\))/.exec(style);
-          if (bg && HIGHLIGHT_BY_RGB.has(bg[1].replace(/\s+/g, '').replace(/,/g, ', '))) el.setAttribute('style', `background-color: ${bg[1].replace(/\s+/g, '').replace(/,/g, ', ')};`);
+          const bg = /background-color:\s*rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)/.exec(style);
+          if (bg && bg.slice(1, 4).every((v) => +v <= 255)) {
+            el.setAttribute('style', `background-color: rgb(${+bg[1]}, ${+bg[2]}, ${+bg[3]});`);
+            registerColor('#' + bg.slice(1, 4).map((v) => (+v).toString(16).padStart(2, '0')).join(''));
+          }
         }
         // size and text colour
         if (tag === 'font') {
@@ -187,7 +199,10 @@
         if (tag === 'td') {
           // cell colour: a name (the page's security policy stops inline styles, so styles.css draws each one)
           const fill = (n.getAttribute('data-fill') || '').toLowerCase();
-          if (FILL_OK.has(fill) || HIGHLIGHTS.some((h) => h[0].toLowerCase() === fill)) el.setAttribute('data-fill', fill);
+          if (/^[0-9a-f]{6}$/.test(fill)) {
+            el.setAttribute('data-fill', fill);
+            registerColor('#' + fill);
+          } else if (HIGHLIGHTS.some((h) => h[0].toLowerCase() === fill)) el.setAttribute('data-fill', fill); // (older notes: a color name)
           for (const a of ['colspan', 'rowspan']) {
             const v = parseInt(n.getAttribute(a), 10);
             if (v > 1 && v <= 20) el.setAttribute(a, String(v));
@@ -401,5 +416,5 @@
     }
   }
 
-  window.RichNotes = { secretHtml, maskSecrets, SIZES, HIGHLIGHTS, COLOURS, THEME_COLORS, STANDARD_COLORS, DEFAULT_TEXT, sanitize, toText, hasFormatting, fromPlain, richFor, tableHtml, addRow, addColumn, deleteRow, deleteColumn };
+  window.RichNotes = { secretHtml, maskSecrets, SIZES, HIGHLIGHTS, COLOURS, THEME_COLORS, STANDARD_COLORS, DEFAULT_TEXT, registerColor, sanitize, toText, hasFormatting, fromPlain, richFor, tableHtml, addRow, addColumn, deleteRow, deleteColumn };
 })();
