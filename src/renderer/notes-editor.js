@@ -46,7 +46,31 @@
     ['Brown', '#795548'],
     ['Grey', '#7a7a7a'],
   ];
-  const HIGHLIGHT_BY_RGB = new Map(HIGHLIGHTS.map((h) => [h[2], h]));
+  // The color picker grids (like Word's): theme colors (a column per hue, light to dark) and a row of standard ones.
+  const DEFAULT_TEXT = '#2f3b28'; // the text color "Automatic" gives
+  const THEME_COLORS = [
+    ['#ffffff', '#fbdcda', '#fbeada', '#fbf3da', '#dafbda', '#dafbf5', '#daf0fb', '#dae5fb', '#ebdafb', '#fbdaed'],
+    ['#e7e6e6', '#f5a9a3', '#f5c9a3', '#f5e0a3', '#a3f5a3', '#a3f5e7', '#a3daf5', '#a3bef5', '#cca3f5', '#f5a3d3'],
+    ['#bfbfbf', '#e87a73', '#e8a973', '#e8cb73', '#73e873', '#73e8d5', '#73c1e8', '#739ae8', '#ad73e8', '#e873b7'],
+    ['#7f7f7f', '#dd382c', '#dd7f2c', '#ddb12c', '#2cdd2c', '#2cddbf', '#2ca2dd', '#2c67dd', '#852cdd', '#dd2c93'],
+    ['#404040', '#a02a22', '#a05d22', '#a08022', '#22a022', '#22a08b', '#2276a0', '#224ca0', '#6122a0', '#a0226b'],
+    ['#000000', '#691c16', '#693d16', '#695416', '#166916', '#16695b', '#164e69', '#163269', '#401669', '#691647'],
+  ];
+  const STANDARD_COLORS = ['#c00000', '#ff0000', '#ffc000', '#ffff00', '#92d050', '#00b050', '#00b0f0', '#0070c0', '#002060', '#7030a0'];
+  const rgbOf = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
+  const PALETTE = [...new Set([...THEME_COLORS.flat(), ...STANDARD_COLORS])];
+  // highlights allowed: the picker's colors, plus the older, smaller set (still shown in notes saved with them)
+  const HIGHLIGHT_BY_RGB = new Map([...HIGHLIGHTS.map((h) => [h[2], h]), ...PALETTE.map((hex) => [rgbOf(hex), [hex, hex, rgbOf(hex)]])]);
+  const FILL_OK = new Set(PALETTE.map((h) => h.slice(1)));
+  // The page's security policy stops inline styles, so notes carry plain colors (a style written by the editor, or
+  // data-fill on a table cell) and these rules draw them. Built here, in code, from the same list the picker uses.
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(PALETTE.map((hex) => `.rich [style*='background-color: ${rgbOf(hex)}'] { background-color: ${hex}; } .rich td[data-fill='${hex.slice(1)}'] { background-color: ${hex}; }`).join('\n'));
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  } catch {
+    // (older engine: the picker's colors just won't show)
+  }
   const ALIGN = ['center', 'right', 'justify'];
   const MAX_HTML = 8 * 1024 * 1024; // pictures make notes bigger
   const MAX_PICTURE = 3 * 1024 * 1024;
@@ -137,7 +161,7 @@
           const size = n.getAttribute('size');
           if (/^[1-7]$/.test(size || '')) el.setAttribute('size', size);
           const c = hexColour(n.getAttribute('color'));
-          if (c) el.setAttribute('color', c);
+          if (c && c !== DEFAULT_TEXT) el.setAttribute('color', c); // (the automatic color is just "no color")
         }
         if (HEADING_SIZE[name]) {
           wrap('b');
@@ -163,7 +187,7 @@
         if (tag === 'td') {
           // cell colour: a name (the page's security policy stops inline styles, so styles.css draws each one)
           const fill = (n.getAttribute('data-fill') || '').toLowerCase();
-          if (HIGHLIGHTS.some((h) => h[0].toLowerCase() === fill)) el.setAttribute('data-fill', fill);
+          if (FILL_OK.has(fill) || HIGHLIGHTS.some((h) => h[0].toLowerCase() === fill)) el.setAttribute('data-fill', fill);
           for (const a of ['colspan', 'rowspan']) {
             const v = parseInt(n.getAttribute(a), 10);
             if (v > 1 && v <= 20) el.setAttribute(a, String(v));
@@ -377,5 +401,5 @@
     }
   }
 
-  window.RichNotes = { secretHtml, maskSecrets, SIZES, HIGHLIGHTS, COLOURS, sanitize, toText, hasFormatting, fromPlain, richFor, tableHtml, addRow, addColumn, deleteRow, deleteColumn };
+  window.RichNotes = { secretHtml, maskSecrets, SIZES, HIGHLIGHTS, COLOURS, THEME_COLORS, STANDARD_COLORS, DEFAULT_TEXT, sanitize, toText, hasFormatting, fromPlain, richFor, tableHtml, addRow, addColumn, deleteRow, deleteColumn };
 })();

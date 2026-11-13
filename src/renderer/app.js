@@ -1802,6 +1802,7 @@ function openEditor(entry, kind) {
   editorSubsites = entry && entry.subsites ? entry.subsites.map((s) => ({ ...s })) : [];
   renderEditorSubsites();
   $('e-notes').innerHTML = (entry && RichNotes.richFor(entry)) || RichNotes.fromPlain(entry ? entry.notes : '');
+  resetNotesHistory();
   updateToolbar();
   resetEditorReminders();
   editorFiles = entry && entry.attachments ? entry.attachments.map((f) => ({ ...f })) : [];
@@ -1909,12 +1910,13 @@ function updateToolbar() {
       const style = el.getAttribute('style') || '';
       const bg = /background-color:\s*([^;]+)/.exec(style);
       if (bg && !/transparent|rgba\(0, 0, 0, 0\)/.test(bg[1])) hl = true;
-      if ((el.tagName === 'FONT' && el.getAttribute('color')) || /(^|;)\s*color:/.test(style)) colour = true;
+      // (the Automatic color doesn't count as a color)
+      if ((el.tagName === 'FONT' && el.getAttribute('color') && el.getAttribute('color').toLowerCase() !== RichNotes.DEFAULT_TEXT) || /(^|;)\s*color:/.test(style)) colour = true;
     }
   }
   const menuBtn = (m) => document.querySelector(`#notes-toolbar [data-menu="${m}"]`);
   menuBtn('highlight').classList.toggle('active', hl);
-  menuBtn('colour').classList.toggle('active', colour);
+  menuBtn('color').classList.toggle('active', colour);
   menuBtn('size').classList.toggle('active', inNotes && size !== '3');
   menuBtn('table').classList.toggle('active', inNotes && !!notesCell());
   // the Hide button turns into "Show text" while the cursor is inside a hidden section
@@ -1929,11 +1931,166 @@ document.addEventListener('selectionchange', () => {
 });
 notesEd.addEventListener('blur', () => setTimeout(updateToolbar, 0));
 
+// ---------- undo / redo in the notes ----------
+// The browser's own undo only knows about typing and its own commands, so things the app does itself (Hide / Unhide,
+// table fills, adding a row, picture sizes…) couldn't be undone. So the notes keep their own list of steps: a copy
+// of the notes (and where the cursor was) after each change. Typing in one go counts as one step.
+const noteHist = { stack: [], at: 0, kind: '', time: 0, restoring: false };
+const NOTE_HIST_STEPS = 200;
+const NOTE_HIST_CHARS = 60 * 1024 * 1024; // pictures live inside the notes, so cap the memory used
+const notesPath = (node) => {
+  const path = [];
+  for (let n = node; n && n !== notesEd; n = n.parentNode) path.unshift([...n.parentNode.childNodes].indexOf(n));
+  return path;
+};
+const notesNode = (path) => path.reduce((n, i) => (n && n.childNodes[i]) || null, notesEd);
+function captureNotes() {
+  const html = notesEd.innerHTML.replace(/\sclass="cell-picked"/g, '');
+  let sel = null;
+  const s = getSelection();
+  if (document.activeElement === notesEd && s.rangeCount) {
+    const r = s.getRangeAt(0);
+    if (notesEd.contains(r.startContainer) && notesEd.contains(r.endContainer)) sel = { a: notesPath(r.startContainer), ao: r.startOffset, b: notesPath(r.endContainer), bo: r.endOffset };
+  }
+  return { html, sel };
+}
+function updateUndoButtons() {
+  $('tb-undo').disabled = noteHist.at <= 0;
+  $('tb-redo').disabled = noteHist.at >= noteHist.stack.length - 1;
+}
+function resetNotesHistory() {
+  noteHist.stack = [captureNotes()];
+  noteHist.at = 0;
+  noteHist.kind = '';
+  updateUndoButtons();
+}
+function recordNotes(kind) {
+  if (noteHist.restoring) return;
+  const snap = captureNotes();
+  if (noteHist.stack[noteHist.at] && noteHist.stack[noteHist.at].html === snap.html) {
+    noteHist.stack[noteHist.at].sel = snap.sel;
+    return;
+  }
+  noteHist.stack.length = noteHist.at + 1; // (a new change ends the redo list)
+  const now = Date.now();
+  if (kind === 'type' && noteHist.kind === 'type' && now - noteHist.time < 800 && noteHist.at > 0) noteHist.stack[noteHist.at] = snap;
+  else {
+    noteHist.stack.push(snap);
+    noteHist.at++;
+  }
+  noteHist.kind = kind;
+  noteHist.time = now;
+  let chars = noteHist.stack.reduce((n, s) => n + s.html.length, 0);
+  while (noteHist.stack.length > 2 && (noteHist.stack.length > NOTE_HIST_STEPS || chars > NOTE_HIST_CHARS)) {
+    chars -= noteHist.stack.shift().html.length;
+    noteHist.at--;
+  }
+  updateUndoButtons();
+}
+function stepNotes(dir) {
+  const to = noteHist.at + dir;
+  if (to < 0 || to >= noteHist.stack.length) return;
+  noteHist.at = to;
+  const snap = noteHist.stack[to];
+  noteHist.restoring = true;
+  editMulti.clear();
+  notesEd.innerHTML = snap.html;
+  notesEd.focus();
+  const s = getSelection();
+  const r = document.createRange();
+  const a = snap.sel && notesNode(snap.sel.a);
+  const b = snap.sel && notesNode(snap.sel.b);
+  try {
+    if (!a || !b) throw new Error('no place');
+    r.setStart(a, Math.min(snap.sel.ao, a.nodeType === 3 ? a.length : a.childNodes.length));
+    r.setEnd(b, Math.min(snap.sel.bo, b.nodeType === 3 ? b.length : b.childNodes.length));
+  } catch {
+    r.selectNodeContents(notesEd);
+    r.collapse(false);
+  }
+  s.removeAllRanges();
+  s.addRange(r);
+  notesEd.dispatchEvent(new Event('input')); // (so the editor notices the change)
+  noteHist.restoring = false;
+  noteHist.kind = '';
+  rememberNotesSelection();
+  updateToolbar();
+  updateUndoButtons();
+}
+notesEd.addEventListener('input', (e) => recordNotes(/^(insertText|insertCompositionText|deleteContent(Backward|Forward)|deleteWord(Backward|Forward))$/.test(e.inputType || '') ? 'type' : 'op'));
+// Ctrl / ⌘ + Z, and the Edit menu's Undo / Redo, use this list instead of the browser's.
+notesEd.addEventListener('beforeinput', (e) => {
+  if (e.inputType !== 'historyUndo' && e.inputType !== 'historyRedo') return;
+  e.preventDefault();
+  stepNotes(e.inputType === 'historyUndo' ? -1 : 1);
+});
+notesEd.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' || k === 'y') {
+    e.preventDefault();
+    stepNotes(k === 'y' || e.shiftKey ? 1 : -1);
+  }
+});
+$('tb-undo').addEventListener('click', () => stepNotes(-1));
+$('tb-redo').addEventListener('click', () => stepNotes(1));
+
 // Clicking the toolbar keeps the cursor in the notes.
 $('notes-toolbar').addEventListener('mousedown', (e) => {
   if (e.target.closest('button')) e.preventDefault();
 });
 const swatch = (cls) => `<span class="swatch ${cls}"></span>`;
+// The color picker, like Word's: an Automatic / No Color choice, then a grid of theme colors and a row of standard ones.
+// (Used for highlights, text color and table fills.)
+function openColorPanel(x, y, { title, none, text = false, onPick }) {
+  closeMenu();
+  closeTablePicker();
+  const panel = $('color-panel');
+  panel.replaceChildren();
+  const pick = (hex) => () => {
+    closeColorPanel();
+    onPick(hex);
+  };
+  if (title) panel.appendChild(Object.assign(document.createElement('div'), { className: 'menu-label', textContent: title }));
+  const noneBtn = document.createElement('button');
+  noneBtn.type = 'button';
+  noneBtn.className = 'cp-none';
+  noneBtn.innerHTML = text ? '<span class="cp-none-box cp-none-text">A</span>' : '<span class="cp-none-box"></span>';
+  noneBtn.appendChild(Object.assign(document.createElement('span'), { textContent: none }));
+  noneBtn.addEventListener('click', pick(null));
+  panel.appendChild(noneBtn);
+  const grid = (label, rows) => {
+    panel.appendChild(Object.assign(document.createElement('div'), { className: 'menu-label', textContent: label }));
+    const g = document.createElement('div');
+    g.className = 'cp-grid';
+    for (const hex of rows.flat()) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cp-swatch';
+      b.title = hex.toUpperCase();
+      b.setAttribute('aria-label', hex);
+      b.style.backgroundColor = hex;
+      b.addEventListener('click', pick(hex));
+      g.appendChild(b);
+    }
+    panel.appendChild(g);
+  };
+  grid('Theme Colors', RichNotes.THEME_COLORS);
+  grid('Standard Colors', [RichNotes.STANDARD_COLORS]);
+  show(panel);
+  const r = panel.getBoundingClientRect();
+  panel.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
+  panel.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
+}
+function closeColorPanel() {
+  hide($('color-panel'));
+}
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('#color-panel') && !e.target.closest('#notes-toolbar [data-menu="highlight"], #notes-toolbar [data-menu="color"]')) closeColorPanel();
+});
+$('color-panel').addEventListener('mousedown', (e) => e.preventDefault()); // (keeps the cursor in the notes)
+window.addEventListener('blur', closeColorPanel);
+window.addEventListener('resize', closeColorPanel);
 const btnPos = (b) => {
   const r = b.getBoundingClientRect();
   return [r.left, r.bottom + 4];
@@ -1948,13 +2105,9 @@ $('notes-toolbar').addEventListener('click', (e) => {
     const current = $('tb-size-label').textContent;
     popupMenu(x, y, RichNotes.SIZES.map(([text, v]) => ({ text, selected: text === current, run: () => runNotes('fontSize', v) })));
   } else if (b.dataset.menu === 'highlight') {
-    popupMenu(x, y, [
-      ...RichNotes.HIGHLIGHTS.map(([text, hex]) => ({ text, icon: swatch('sw-' + text.toLowerCase()), run: () => runNotes('hiliteColor', hex) })),
-      '-',
-      { text: 'No highlight', icon: swatch('sw-none'), run: () => runNotes('hiliteColor', 'transparent') },
-    ]);
-  } else if (b.dataset.menu === 'colour') {
-    popupMenu(x, y, RichNotes.COLOURS.map(([text, hex]) => ({ text, icon: swatch('tc-' + text.toLowerCase()), run: () => runNotes('foreColor', hex) })));
+    openColorPanel(x, y, { none: 'No Color', onPick: (hex) => runNotes('hiliteColor', hex || 'transparent') });
+  } else if (b.dataset.menu === 'color') {
+    openColorPanel(x, y, { none: 'Automatic', text: true, onPick: (hex) => runNotes('foreColor', hex || RichNotes.DEFAULT_TEXT) });
   } else if (b.dataset.menu === 'table') {
     const td = notesCell();
     if (!td) return openTablePicker(x, y);
@@ -1981,12 +2134,11 @@ $('notes-toolbar').addEventListener('click', (e) => {
         placeCaret(td);
         notesEd.dispatchEvent(new Event('input'));
       };
-      popupMenu(x, y, [
-        { label: { picked: 'Fill selected cells', cell: 'Fill cell', row: 'Fill row', column: 'Fill column', table: 'Fill table' }[scope] },
-        ...RichNotes.HIGHLIGHTS.map(([text]) => ({ text, icon: swatch('sw-' + text.toLowerCase()), run: paint(text.toLowerCase()) })),
-        '-',
-        { text: 'No fill', icon: swatch('sw-none'), run: paint(null) },
-      ]);
+      openColorPanel(x, y, {
+        title: { picked: 'Fill selected cells', cell: 'Fill cell', row: 'Fill row', column: 'Fill column', table: 'Fill table' }[scope],
+        none: 'No Color',
+        onPick: (hex) => paint(hex ? hex.slice(1) : null)(),
+      });
     };
     popupMenu(x, y, [
       { label: 'Table' },
@@ -4010,6 +4162,8 @@ document.querySelectorAll('.menu-top').forEach((btn) => {
 document.querySelectorAll('.menu-item').forEach((item) => {
   item.addEventListener('click', () => {
     closeMenus();
+    // in the notes, Undo / Redo use the notes' own list of steps (the browser's doesn't know about everything)
+    if ((item.dataset.action === 'undo' || item.dataset.action === 'redo') && document.activeElement === notesEd) return stepNotes(item.dataset.action === 'undo' ? -1 : 1);
     window.api.menuAction(item.dataset.action);
   });
 });
@@ -4028,6 +4182,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'Escape' && openMenu) return closeMenus();
+  if (e.key === 'Escape' && !$('color-panel').classList.contains('hidden')) return closeColorPanel();
   if (e.key === 'Escape' && !$('ctx-menu').classList.contains('hidden')) return closeMenu();
   if (e.key === 'Escape' && !$('table-picker').classList.contains('hidden')) return closeTablePicker();
   if (e.key === 'Escape' && !$('folder-menu').classList.contains('hidden')) return closeFolderPicker();
