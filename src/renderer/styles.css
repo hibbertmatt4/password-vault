@@ -812,7 +812,9 @@ button.secret-copy.copied, button.secret-copy.copied:hover { background: rgba(19
 /* cells picked with Ctrl + drag (cell-drag: the ones the drag covers right now, before the mouse is let go) */
 .rich td.cell-picked, .rich td.cell-drag { box-shadow: inset 0 0 0 100px rgba(197, 168, 130, 0.32); outline: 2px solid rgba(160, 128, 84, 0.7); outline-offset: -2px; }
 /* while dragging over cells, only those cells show as selected (not the text in between) */
-.selecting-cells ::selection, .selecting-cells::selection { background: transparent; }
+/* (#e-notes / #v-notes have their own ::selection color above, so these need the id to win) */
+#e-notes.selecting-cells ::selection, #e-notes.selecting-cells::selection,
+#v-notes.selecting-cells ::selection, #v-notes.selecting-cells::selection { background-color: transparent; }
 .notes-editor.rich td:focus-within { outline: 2px solid rgba(197, 168, 130, 0.6); outline-offset: -2px; }
 
 /* table size picker */
