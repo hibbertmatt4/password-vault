@@ -1832,10 +1832,41 @@ function focusNotes() {
     sel.addRange(notesRange);
   }
 }
+const sameRange = (a, b) => a.compareBoundaryPoints(Range.START_TO_START, b) === 0 && a.compareBoundaryPoints(Range.END_TO_END, b) === 0;
+// Every separate part picked in the notes with Ctrl / ⌘ (earlier picks, plus the one still selected), in page order.
+function pickedParts() {
+  const inNotes = (r) => r && !r.collapsed && notesEd.contains(r.commonAncestorContainer);
+  const list = editMulti.ranges().filter(inNotes);
+  const sel = getSelection();
+  const live = document.activeElement === notesEd && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : notesRange;
+  if (inNotes(live) && !list.some((r) => sameRange(r, live))) list.push(live);
+  return list.sort((a, b) => a.compareBoundaryPoints(Range.START_TO_START, b));
+}
+const TOGGLE_CMDS = ['bold', 'italic', 'underline', 'strikeThrough'];
 function runNotes(cmd, value = null) {
+  const parts = pickedParts();
   focusNotes();
   document.execCommand('styleWithCSS', false, false);
-  document.execCommand(cmd, false, value);
+  if (parts.length < 2) document.execCommand(cmd, false, value);
+  else {
+    // several parts picked: do it to every one (last first, so the earlier ones aren't disturbed)
+    const sel = getSelection();
+    const pick = (r) => {
+      sel.removeAllRanges();
+      sel.addRange(r);
+    };
+    let turnOn = true;
+    if (value === null && TOGGLE_CMDS.includes(cmd)) {
+      // a mix of bold and plain parts: make all of them bold; only if every one already is, turn it off
+      const states = parts.map((r) => (pick(r), document.queryCommandState(cmd)));
+      turnOn = states.some((s) => !s);
+      for (const r of parts.slice().reverse()) {
+        pick(r);
+        if (document.queryCommandState(cmd) !== turnOn) document.execCommand(cmd, false, null);
+      }
+    } else for (const r of parts.slice().reverse()) (pick(r), document.execCommand(cmd, false, value));
+    editMulti.clear();
+  }
   rememberNotesSelection();
   updateToolbar();
 }
@@ -2157,7 +2188,7 @@ function hideRange(range) {
 // The Hide button and the right-click menu's Hide / Unhide. With several parts picked with Ctrl / ⌘ + double-click,
 // every one of them is hidden.
 function toggleSecret() {
-  const parts = editMulti.ranges().filter((r) => !r.collapsed && notesEd.contains(r.commonAncestorContainer));
+  const parts = pickedParts();
   const inside = parts.length < 2 ? secretAround() : null;
   focusNotes();
   const sel = getSelection();
@@ -2285,6 +2316,16 @@ function multiSelect(container, name, { keepNative }) {
         paint();
       }
     } else clear();
+  });
+  // dragging with Ctrl / ⌘ held selects one more part too (the browser itself keeps only the latest one)
+  container.addEventListener('mouseup', (e) => {
+    if (e.button !== 0 || !(e.ctrlKey || e.metaKey)) return;
+    const s = getSelection();
+    if (!s.rangeCount || s.isCollapsed) return;
+    const r = s.getRangeAt(0).cloneRange();
+    if (!inside(r) || ranges.some((x) => same(x, r))) return;
+    ranges.push(r);
+    paint();
   });
   container.addEventListener('dblclick', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
