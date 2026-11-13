@@ -1964,17 +1964,25 @@ $('notes-toolbar').addEventListener('click', (e) => {
       placeCaret(next && next.isConnected ? next : td.isConnected ? td : null);
       notesEd.dispatchEvent(new Event('input'));
     };
-    // Fill colour for the cell, its row, or the whole table (a second menu of colours)
+    const picked = editMulti.ranges().map((r) => r._cell).filter((c) => c && c.isConnected);
+    // Fill colour for the cell, its row or column, the picked cells, or the whole table (a second menu of colours)
     const fill = (scope) => () => {
-      const cells = scope === 'cell' ? [td] : scope === 'row' ? [...td.parentElement.cells] : [...td.closest('table').querySelectorAll('td')];
+      const table = td.closest('table');
+      const cells =
+        scope === 'picked' ? picked
+        : scope === 'cell' ? [td]
+        : scope === 'row' ? [...td.parentElement.cells]
+        : scope === 'column' ? [...table.rows].map((tr) => tr.cells[td.cellIndex]).filter(Boolean)
+        : [...table.querySelectorAll('td')];
       const paint = (name) => () => {
         focusNotes();
         for (const c of cells) name ? c.setAttribute('data-fill', name) : c.removeAttribute('data-fill');
+        if (scope === 'picked') editMulti.clear();
         placeCaret(td);
         notesEd.dispatchEvent(new Event('input'));
       };
       popupMenu(x, y, [
-        { label: scope === 'cell' ? 'Fill cell' : scope === 'row' ? 'Fill row' : 'Fill table' },
+        { label: { picked: 'Fill selected cells', cell: 'Fill cell', row: 'Fill row', column: 'Fill column', table: 'Fill table' }[scope] },
         ...RichNotes.HIGHLIGHTS.map(([text]) => ({ text, icon: swatch('sw-' + text.toLowerCase()), run: paint(text.toLowerCase()) })),
         '-',
         { text: 'No fill', icon: swatch('sw-none'), run: paint(null) },
@@ -1982,8 +1990,10 @@ $('notes-toolbar').addEventListener('click', (e) => {
     };
     popupMenu(x, y, [
       { label: 'Table' },
+      ...(picked.length > 1 ? [{ text: `Fill ${picked.length} selected cells…`, icon: swatch('sw-orange'), run: fill('picked') }] : []),
       { text: 'Fill cell…', icon: swatch('sw-yellow'), run: fill('cell') },
       { text: 'Fill row…', icon: swatch('sw-green'), run: fill('row') },
+      { text: 'Fill column…', icon: swatch('sw-pink'), run: fill('column') },
       { text: 'Fill table…', icon: swatch('sw-blue'), run: fill('table') },
       '-',
       { text: 'Insert row above', icon: ICON.plus, run: edit((c) => RichNotes.addRow(c, false)) },
@@ -2314,6 +2324,9 @@ window.api.onNotesAction((action) => {
 function multiSelect(container, name, { keepNative }) {
   let ranges = [];
   const paint = () => {
+    // table cells picked as a block get a tint (empty cells have no text for the highlight to colour)
+    for (const td of container.querySelectorAll('td.cell-picked')) td.classList.remove('cell-picked');
+    for (const r of ranges) if (r._cell && r._cell.isConnected) r._cell.classList.add('cell-picked');
     if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined') return;
     if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges));
     else CSS.highlights.delete(name);
@@ -2324,6 +2337,24 @@ function multiSelect(container, name, { keepNative }) {
     paint();
   };
   const inside = (r) => container.contains(r.commonAncestorContainer);
+  // A selection that runs from one table cell to a cell in a different row → every cell in that block of
+  // rows and columns (a single column when both ends are in the same one); otherwise null.
+  const cellBlock = (r) => {
+    const cellOf = (n) => {
+      const el = n && n.nodeType === 1 ? n : n && n.parentElement;
+      return el && el.closest('td');
+    };
+    const a = cellOf(r.startContainer);
+    const b = cellOf(r.endContainer);
+    if (!a || !b || a === b || !container.contains(a)) return null;
+    const table = a.closest('table');
+    if (table !== b.closest('table') || a.parentElement.rowIndex === b.parentElement.rowIndex) return null;
+    const rows = [a.parentElement.rowIndex, b.parentElement.rowIndex].sort((x, y) => x - y);
+    const cols = [a.cellIndex, b.cellIndex].sort((x, y) => x - y);
+    const out = [];
+    for (let i = rows[0]; i <= rows[1]; i++) for (let j = cols[0]; j <= cols[1]; j++) if (table.rows[i] && table.rows[i].cells[j]) out.push(table.rows[i].cells[j]);
+    return out.length > 1 ? out : null;
+  };
   const same = (a, b) => a.compareBoundaryPoints(Range.START_TO_START, b) === 0 && a.compareBoundaryPoints(Range.END_TO_END, b) === 0;
   const sorted = () => ranges.slice().sort((a, b) => a.compareBoundaryPoints(Range.START_TO_START, b));
   container.addEventListener('mousedown', (e) => {
@@ -2343,7 +2374,22 @@ function multiSelect(container, name, { keepNative }) {
     const s = getSelection();
     if (!s.rangeCount || s.isCollapsed) return;
     const r = s.getRangeAt(0).cloneRange();
-    if (!inside(r) || ranges.some((x) => same(x, r))) return;
+    if (!inside(r)) return;
+    // Dragging down a table column (or over a block of cells) picks just those cells, not everything in between
+    const cells = cellBlock(r);
+    if (cells) {
+      for (const td of cells) {
+        if (ranges.some((x) => x._cell === td)) continue;
+        const cr = document.createRange();
+        cr.selectNodeContents(td);
+        cr._cell = td;
+        ranges.push(cr);
+      }
+      s.collapse(cells[cells.length - 1], 0);
+      paint();
+      return;
+    }
+    if (ranges.some((x) => same(x, r))) return;
     ranges.push(r);
     paint();
   });

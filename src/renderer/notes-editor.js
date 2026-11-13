@@ -19,18 +19,31 @@
   // Highlight colours: the exact text Chromium writes for each, which styles.css matches.
   const HIGHLIGHTS = [
     ['Yellow', '#fff176', 'rgb(255, 241, 118)'],
-    ['Green', '#b9f6ca', 'rgb(185, 246, 202)'],
-    ['Blue', '#b3e5fc', 'rgb(179, 229, 252)'],
-    ['Pink', '#f8bbd0', 'rgb(248, 187, 208)'],
     ['Orange', '#ffcc80', 'rgb(255, 204, 128)'],
+    ['Coral', '#ffab91', 'rgb(255, 171, 145)'],
+    ['Pink', '#f8bbd0', 'rgb(248, 187, 208)'],
+    ['Purple', '#e1bee7', 'rgb(225, 190, 231)'],
+    ['Lavender', '#d1c4e9', 'rgb(209, 196, 233)'],
+    ['Blue', '#b3e5fc', 'rgb(179, 229, 252)'],
+    ['Teal', '#b2dfdb', 'rgb(178, 223, 219)'],
+    ['Green', '#b9f6ca', 'rgb(185, 246, 202)'],
+    ['Lime', '#e6ee9c', 'rgb(230, 238, 156)'],
+    ['Brown', '#d7ccc8', 'rgb(215, 204, 200)'],
+    ['Grey', '#e0e0e0', 'rgb(224, 224, 224)'],
   ];
   const COLOURS = [
     ['Automatic', '#2f3b28'],
+    ['Black', '#000000'],
     ['Red', '#c0392b'],
     ['Orange', '#d35400'],
+    ['Gold', '#b7791f'],
     ['Green', '#2e7d32'],
+    ['Teal', '#00838f'],
     ['Blue', '#1e5fa8'],
+    ['Navy', '#1a237e'],
     ['Purple', '#7b3fa0'],
+    ['Pink', '#c2185b'],
+    ['Brown', '#795548'],
     ['Grey', '#7a7a7a'],
   ];
   const HIGHLIGHT_BY_RGB = new Map(HIGHLIGHTS.map((h) => [h[2], h]));

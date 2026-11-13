@@ -538,7 +538,13 @@ button.inline-link:hover { background: none; border: none; color: var(--green-li
 .modal::-webkit-scrollbar-corner, .detail::-webkit-scrollbar-corner, .notes-editor::-webkit-scrollbar-corner { background: transparent; }
 .modal-title { font-family: var(--font-display); font-size: 1.45rem; font-weight: 700; color: var(--green); }
 .modal-sub { font-size: 13px; color: var(--text-muted); margin: 4px 0 16px; line-height: 1.5; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+/* The buttons (Save / Set reminder / Cancel…) stay in view at the bottom of a pop-up while its contents scroll. */
+.modal-actions {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;
+  position: sticky; bottom: -26px; z-index: 2; /* (the pop-up has 26px of padding) */
+  margin-bottom: -26px; padding: 14px 0 26px;
+  background: var(--white); box-shadow: 0 -10px 12px -6px var(--white);
+}
 .modal .field { margin: 14px 0 0; }
 .modal .error { margin-top: 10px; }
 
@@ -678,12 +684,9 @@ button.tb-size { font-size: 12.5px; min-width: 84px; justify-content: space-betw
   overflow-wrap: anywhere; cursor: text;
 }
 .swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.15); flex: none; }
-.swatch.sw-yellow { background: #fff176; } .swatch.sw-green { background: #b9f6ca; } .swatch.sw-blue { background: #b3e5fc; }
-.swatch.sw-pink { background: #f8bbd0; } .swatch.sw-orange { background: #ffcc80; }
+.swatch.sw-yellow { background: #fff176; } .swatch.sw-orange { background: #ffcc80; } .swatch.sw-coral { background: #ffab91; } .swatch.sw-pink { background: #f8bbd0; } .swatch.sw-purple { background: #e1bee7; } .swatch.sw-lavender { background: #d1c4e9; } .swatch.sw-blue { background: #b3e5fc; } .swatch.sw-teal { background: #b2dfdb; } .swatch.sw-green { background: #b9f6ca; } .swatch.sw-lime { background: #e6ee9c; } .swatch.sw-brown { background: #d7ccc8; } .swatch.sw-grey { background: #e0e0e0; }
 .swatch.sw-none { background: linear-gradient(135deg, #fff 45%, #c0392b 45%, #c0392b 55%, #fff 55%); }
-.swatch.tc-automatic { background: #2f3b28; } .swatch.tc-red { background: #c0392b; } .swatch.tc-orange { background: #d35400; }
-.swatch.tc-green { background: #2e7d32; } .swatch.tc-blue { background: #1e5fa8; } .swatch.tc-purple { background: #7b3fa0; }
-.swatch.tc-grey { background: #7a7a7a; }
+.swatch.tc-automatic { background: #2f3b28; } .swatch.tc-black { background: #000000; } .swatch.tc-red { background: #c0392b; } .swatch.tc-orange { background: #d35400; } .swatch.tc-gold { background: #b7791f; } .swatch.tc-green { background: #2e7d32; } .swatch.tc-teal { background: #00838f; } .swatch.tc-blue { background: #1e5fa8; } .swatch.tc-navy { background: #1a237e; } .swatch.tc-purple { background: #7b3fa0; } .swatch.tc-pink { background: #c2185b; } .swatch.tc-brown { background: #795548; } .swatch.tc-grey { background: #7a7a7a; }
 
 /* How formatted notes look, in the editor and when viewing a login. The page blocks inline styles, so the
    highlight and alignment the editor writes as style="" are matched here instead. */
@@ -698,10 +701,17 @@ button.tb-size { font-size: 12.5px; min-width: 84px; justify-content: space-betw
 .rich font[size='6'] { font-size: 27px; }
 .rich font[size='7'] { font-size: 34px; }
 .rich [style*='background-color: rgb(255, 241, 118)'] { background-color: #fff176; }
-.rich [style*='background-color: rgb(185, 246, 202)'] { background-color: #b9f6ca; }
-.rich [style*='background-color: rgb(179, 229, 252)'] { background-color: #b3e5fc; }
-.rich [style*='background-color: rgb(248, 187, 208)'] { background-color: #f8bbd0; }
 .rich [style*='background-color: rgb(255, 204, 128)'] { background-color: #ffcc80; }
+.rich [style*='background-color: rgb(255, 171, 145)'] { background-color: #ffab91; }
+.rich [style*='background-color: rgb(248, 187, 208)'] { background-color: #f8bbd0; }
+.rich [style*='background-color: rgb(225, 190, 231)'] { background-color: #e1bee7; }
+.rich [style*='background-color: rgb(209, 196, 233)'] { background-color: #d1c4e9; }
+.rich [style*='background-color: rgb(179, 229, 252)'] { background-color: #b3e5fc; }
+.rich [style*='background-color: rgb(178, 223, 219)'] { background-color: #b2dfdb; }
+.rich [style*='background-color: rgb(185, 246, 202)'] { background-color: #b9f6ca; }
+.rich [style*='background-color: rgb(230, 238, 156)'] { background-color: #e6ee9c; }
+.rich [style*='background-color: rgb(215, 204, 200)'] { background-color: #d7ccc8; }
+.rich [style*='background-color: rgb(224, 224, 224)'] { background-color: #e0e0e0; }
 .rich [style*='text-align: center'], .rich [align='center'] { text-align: center; }
 .rich [style*='text-align: right'], .rich [align='right'] { text-align: right; }
 .rich [style*='text-align: justify'], .rich [align='justify'] { text-align: justify; }
@@ -757,9 +767,14 @@ button.secret-copy.copied, button.secret-copy.copied:hover { background: rgba(19
 .rich [data-secret].secret-open { align-self: center; }
 .rich table { border-collapse: collapse; margin: 6px 0; min-width: 40%; max-width: 100%; }
 .rich td { border: 1px solid rgba(49, 61, 42, 0.3); padding: 5px 8px; min-width: 48px; vertical-align: top; }
-.rich td[data-fill='yellow'] { background-color: #fff176; } .rich td[data-fill='green'] { background-color: #b9f6ca; }
-.rich td[data-fill='blue'] { background-color: #b3e5fc; } .rich td[data-fill='pink'] { background-color: #f8bbd0; }
-.rich td[data-fill='orange'] { background-color: #ffcc80; }
+.rich td[data-fill='yellow'] { background-color: #fff176; } .rich td[data-fill='orange'] { background-color: #ffcc80; }
+.rich td[data-fill='coral'] { background-color: #ffab91; } .rich td[data-fill='pink'] { background-color: #f8bbd0; }
+.rich td[data-fill='purple'] { background-color: #e1bee7; } .rich td[data-fill='lavender'] { background-color: #d1c4e9; }
+.rich td[data-fill='blue'] { background-color: #b3e5fc; } .rich td[data-fill='teal'] { background-color: #b2dfdb; }
+.rich td[data-fill='green'] { background-color: #b9f6ca; } .rich td[data-fill='lime'] { background-color: #e6ee9c; }
+.rich td[data-fill='brown'] { background-color: #d7ccc8; } .rich td[data-fill='grey'] { background-color: #e0e0e0; }
+/* cells picked with Ctrl + drag */
+.notes-editor.rich td.cell-picked { box-shadow: inset 0 0 0 100px rgba(197, 168, 130, 0.32); outline: 2px solid rgba(160, 128, 84, 0.7); outline-offset: -2px; }
 .notes-editor.rich td:focus-within { outline: 2px solid rgba(197, 168, 130, 0.6); outline-offset: -2px; }
 
 /* table size picker */
