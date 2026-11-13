@@ -809,18 +809,26 @@ button.secret-copy.copied, button.secret-copy.copied:hover { background: rgba(19
 .rich td[data-fill='blue'] { background-color: #b3e5fc; } .rich td[data-fill='teal'] { background-color: #b2dfdb; }
 .rich td[data-fill='green'] { background-color: #b9f6ca; } .rich td[data-fill='lime'] { background-color: #e6ee9c; }
 .rich td[data-fill='brown'] { background-color: #d7ccc8; } .rich td[data-fill='grey'] { background-color: #e0e0e0; }
-/* cells picked with Ctrl + drag */
-.notes-editor.rich td.cell-picked { box-shadow: inset 0 0 0 100px rgba(197, 168, 130, 0.32); outline: 2px solid rgba(160, 128, 84, 0.7); outline-offset: -2px; }
+/* cells picked with Ctrl + drag (cell-drag: the ones the drag covers right now, before the mouse is let go) */
+.rich td.cell-picked, .rich td.cell-drag { box-shadow: inset 0 0 0 100px rgba(197, 168, 130, 0.32); outline: 2px solid rgba(160, 128, 84, 0.7); outline-offset: -2px; }
+/* while dragging over cells, only those cells show as selected (not the text in between) */
+.selecting-cells ::selection, .selecting-cells::selection { background: transparent; }
 .notes-editor.rich td:focus-within { outline: 2px solid rgba(197, 168, 130, 0.6); outline-offset: -2px; }
 
 /* table size picker */
-.table-picker { position: fixed; z-index: 9000; padding: 10px; }
-.table-grid { display: grid; grid-template-columns: repeat(8, 18px); gap: 3px; }
+.menu.table-picker { position: fixed; z-index: 9000; padding: 14px; width: 252px; min-width: 0; max-height: none; overflow: visible; }
+.table-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .table-grid button {
-  width: 18px; height: 18px; padding: 0; border-radius: 3px; border: 1px solid rgba(49, 61, 42, 0.25); background: #fff;
+  width: 100%; height: auto; min-width: 0; min-height: 0; aspect-ratio: 1; padding: 0; border-radius: 4px;
+  border: 1px solid rgba(49, 61, 42, 0.25); background: #fff;
 }
-.table-grid button.on { background: var(--tan); border-color: var(--green); }
-.table-size { margin-top: 8px; font-size: 12px; color: var(--text-muted); text-align: center; }
+.table-grid button.on { background: var(--green); border-color: var(--green); }
+.table-size { margin-top: 10px; font-size: 12px; color: var(--text-muted); text-align: center; min-height: 16px; }
+.table-custom { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(49, 61, 42, 0.1); display: flex; flex-direction: column; gap: 8px; }
+.table-custom-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); }
+.table-custom-row { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); }
+.table-custom-row input { width: 58px; height: 34px; padding: 0 6px; text-align: center; font-size: 13px; }
+button#table-custom-go { width: 100%; height: 36px; }
 
 /* quick Edit / Delete buttons on sidebar rows (hover, or the open login) */
 .entry-list .meta { flex: 1; }

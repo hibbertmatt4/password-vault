@@ -280,6 +280,7 @@
                 <span class="tb-sep"></span>
                 <button type="button" class="tb" id="tb-picture" title="Insert a picture"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5.5-5.5 4 4 2.5-2.5 4.5 4.5"/></svg></button>
                 <button type="button" class="tb" data-menu="table" title="Table"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10M15 9.5v10"/></svg></button>
+                <button type="button" class="tb hidden" id="tb-fill" data-menu="fill" title="Fill the cell with a color" aria-label="Fill cell color"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></svg></button>
                 <button type="button" class="tb" id="tb-secret" title="Hide the selected text (it shows as •••• with a Show button, like a password)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg><span class="tb-label">Hide</span></button>
                 <span class="tb-sep"></span>
                 <button type="button" class="tb" data-cmd="removeFormat" title="Clear formatting"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5h12M12 5l-3 14"/><path d="m15 14 5 5M20 14l-5 5"/></svg></button>
@@ -652,6 +653,16 @@
   <div id="table-picker" class="menu table-picker hidden" role="dialog" aria-label="Insert a table">
     <div id="table-grid" class="table-grid"></div>
     <div id="table-size" class="table-size">Insert a table</div>
+    <div class="table-custom">
+      <span class="table-custom-label">Custom size</span>
+      <div class="table-custom-row">
+        <input id="table-rows" type="number" min="1" max="50" value="3" aria-label="Rows" />
+        <span>rows ×</span>
+        <input id="table-cols" type="number" min="1" max="20" value="3" aria-label="Columns" />
+        <span>columns</span>
+      </div>
+      <button type="button" id="table-custom-go" class="primary">Insert table</button>
+    </div>
   </div>
 
   <!-- Notes: pick a color (highlight, text color, table fill) -->

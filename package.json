@@ -1,7 +1,7 @@
 {
   "name": "password-vault",
   "productName": "Password Vault",
-  "version": "1.29.0",
+  "version": "1.30.0",
   "description": "Password Vault",
   "main": "src/main.js",
   "author": "Matt",

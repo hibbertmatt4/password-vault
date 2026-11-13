@@ -1919,6 +1919,8 @@ function updateToolbar() {
   menuBtn('color').classList.toggle('active', colour);
   menuBtn('size').classList.toggle('active', inNotes && size !== '3');
   menuBtn('table').classList.toggle('active', inNotes && !!notesCell());
+  // the Fill button appears next to the table button while the cursor is in a table (and stays while its colors are open)
+  if (inNotes) $('tb-fill').classList.toggle('hidden', !notesCell());
   // the Hide button turns into "Show text" while the cursor is inside a hidden section
   const inSecret = inNotes && hideButtonUnhides();
   $('tb-secret').classList.toggle('active', inSecret);
@@ -1945,7 +1947,7 @@ const notesPath = (node) => {
 };
 const notesNode = (path) => path.reduce((n, i) => (n && n.childNodes[i]) || null, notesEd);
 function captureNotes() {
-  const html = notesEd.innerHTML.replace(/\sclass="cell-picked"/g, '');
+  const html = notesEd.innerHTML.replace(/\sclass="cell-(picked|drag)"/g, '');
   let sel = null;
   const s = getSelection();
   if (document.activeElement === notesEd && s.rangeCount) {
@@ -2042,6 +2044,8 @@ $('notes-toolbar').addEventListener('mousedown', (e) => {
 const swatch = (cls) => `<span class="swatch ${cls}"></span>`;
 const ICON_PALETTE =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 2-.9 2-1.9 0-.5-.2-.9-.5-1.3-.3-.4-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a3.5 3.5 0 0 0 3.5-3.5C20.5 6.7 16.8 3.5 12 3.5Z"/><circle cx="7.6" cy="11.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10.4" cy="7.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.8" cy="7.9" r="1.1" fill="currentColor" stroke="none"/></svg>';
+const ICON_BUCKET =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></svg>';
 const ICON_PIPETTE =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14.5 6.5 3 3"/><path d="M16.2 4.8a2.1 2.1 0 0 1 3 3L17 10l-3-3Z"/><path d="m14 7-9 9-.8 3.6L7.8 19l9-9"/></svg>';
 // the bar under the highlight / text color icon shows the color last picked (like Word's)
@@ -2291,6 +2295,9 @@ $('notes-toolbar').addEventListener('click', (e) => {
         setToolbarBar('color', hex);
       },
     });
+  } else if (b.dataset.menu === 'fill') {
+    // the Fill button (only there while the cursor is in a table): the picked cells, or the cell the cursor is in
+    openFillColors(x, y, pickedCells().length > 1 ? 'picked' : 'cell');
   } else if (b.dataset.menu === 'table') {
     const td = notesCell();
     if (!td) return openTablePicker(x, y);
@@ -2300,36 +2307,15 @@ $('notes-toolbar').addEventListener('click', (e) => {
       placeCaret(next && next.isConnected ? next : td.isConnected ? td : null);
       notesEd.dispatchEvent(new Event('input'));
     };
-    const picked = editMulti.ranges().map((r) => r._cell).filter((c) => c && c.isConnected);
-    // Fill colour for the cell, its row or column, the picked cells, or the whole table (a second menu of colours)
-    const fill = (scope) => () => {
-      const table = td.closest('table');
-      const cells =
-        scope === 'picked' ? picked
-        : scope === 'cell' ? [td]
-        : scope === 'row' ? [...td.parentElement.cells]
-        : scope === 'column' ? [...table.rows].map((tr) => tr.cells[td.cellIndex]).filter(Boolean)
-        : [...table.querySelectorAll('td')];
-      const paint = (name) => () => {
-        focusNotes();
-        for (const c of cells) name ? c.setAttribute('data-fill', name) : c.removeAttribute('data-fill');
-        if (scope === 'picked') editMulti.clear();
-        placeCaret(td);
-        notesEd.dispatchEvent(new Event('input'));
-      };
-      openColorPanel(x, y, {
-        title: { picked: 'Fill selected cells', cell: 'Fill cell', row: 'Fill row', column: 'Fill column', table: 'Fill table' }[scope],
-        none: 'No Color',
-        onPick: (hex) => paint(hex ? hex.slice(1) : null)(),
-      });
-    };
+    const picked = pickedCells();
+    const fill = (scope) => () => openFillColors(x, y, scope);
     popupMenu(x, y, [
       { label: 'Table' },
-      ...(picked.length > 1 ? [{ text: `Fill ${picked.length} selected cells…`, icon: swatch('sw-orange'), run: fill('picked') }] : []),
-      { text: 'Fill cell…', icon: swatch('sw-yellow'), run: fill('cell') },
-      { text: 'Fill row…', icon: swatch('sw-green'), run: fill('row') },
-      { text: 'Fill column…', icon: swatch('sw-pink'), run: fill('column') },
-      { text: 'Fill table…', icon: swatch('sw-blue'), run: fill('table') },
+      ...(picked.length > 1 ? [{ text: `Fill ${picked.length} selected cells…`, icon: ICON_BUCKET, run: fill('picked') }] : []),
+      { text: 'Fill cell…', icon: ICON_BUCKET, run: fill('cell') },
+      { text: 'Fill row…', icon: ICON_BUCKET, run: fill('row') },
+      { text: 'Fill column…', icon: ICON_BUCKET, run: fill('column') },
+      { text: 'Fill table…', icon: ICON_BUCKET, run: fill('table') },
       '-',
       { text: 'Insert row above', icon: ICON.plus, run: edit((c) => RichNotes.addRow(c, false)) },
       { text: 'Insert row below', icon: ICON.plus, run: edit((c) => RichNotes.addRow(c, true)) },
@@ -2345,6 +2331,33 @@ $('notes-toolbar').addEventListener('click', (e) => {
   }
 });
 
+// The table cells picked with Ctrl + drag.
+const pickedCells = () => editMulti.ranges().map((r) => r._cell).filter((c) => c && c.isConnected);
+// The color drop-down for filling the cell the cursor is in, its row or column, the picked cells, or the whole table.
+function openFillColors(x, y, scope) {
+  const td = notesCell();
+  if (!td) return;
+  const table = td.closest('table');
+  const picked = pickedCells();
+  const cells =
+    scope === 'picked' ? picked
+    : scope === 'cell' ? [td]
+    : scope === 'row' ? [...td.parentElement.cells]
+    : scope === 'column' ? [...table.rows].map((tr) => tr.cells[td.cellIndex]).filter(Boolean)
+    : [...table.querySelectorAll('td')];
+  const paint = (name) => {
+    focusNotes();
+    for (const c of cells) name ? c.setAttribute('data-fill', name) : c.removeAttribute('data-fill');
+    if (scope === 'picked') editMulti.clear();
+    placeCaret(td);
+    notesEd.dispatchEvent(new Event('input'));
+  };
+  openColorPanel(x, y, {
+    title: scope === 'picked' ? `Fill ${picked.length} selected cells` : { cell: 'Fill cell', row: 'Fill row', column: 'Fill column', table: 'Fill table' }[scope],
+    none: 'No Color',
+    onPick: (hex) => paint(hex ? hex.slice(1) : null),
+  });
+}
 // Put the cursor at the start of a table cell (or back in the notes).
 function placeCaret(td) {
   notesEd.focus();
@@ -2390,6 +2403,26 @@ const GRID_COLS = 8;
     closeTablePicker();
     insertTable(+e.target.dataset.r, +e.target.dataset.c);
   });
+  // a table of any size (the grid only goes to 6 × 8)
+  const customTable = () => {
+    const rows = Math.max(1, Math.min(50, Math.round(+$('table-rows').value) || 0));
+    const cols = Math.max(1, Math.min(20, Math.round(+$('table-cols').value) || 0));
+    if (!rows || !cols) return;
+    closeTablePicker();
+    insertTable(rows, cols);
+  };
+  $('table-custom-go').addEventListener('click', customTable);
+  for (const id of ['table-rows', 'table-cols']) {
+    $(id).addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      customTable();
+    });
+    $(id).addEventListener('blur', () => {
+      const max = id === 'table-rows' ? 50 : 20;
+      $(id).value = String(Math.max(1, Math.min(max, Math.round(+$(id).value) || 1)));
+    });
+  }
 })();
 function openTablePicker(x, y) {
   closeMenu();
@@ -2757,29 +2790,53 @@ function multiSelect(container, name, { keepNative }) {
     paint();
   };
   const inside = (r) => container.contains(r.commonAncestorContainer);
-  // A selection that runs from one table cell to a cell in a different row → every cell in that block of
-  // rows and columns (a single column when both ends are in the same one); otherwise null.
-  const cellBlock = (r) => {
-    const cellOf = (n) => {
-      const el = n && n.nodeType === 1 ? n : n && n.parentElement;
-      return el && el.closest('td');
-    };
-    const a = cellOf(r.startContainer);
-    const b = cellOf(r.endContainer);
-    if (!a || !b || a === b || !container.contains(a)) return null;
+  // Ctrl + drag from one table cell to another → every cell in that block of rows and columns (one column when
+  // both ends are in the same one, one row when in the same row); otherwise null.
+  const cellOf = (n) => {
+    const el = n && n.nodeType === 1 ? n : n && n.parentElement;
+    const td = el && el.closest('td');
+    return td && container.contains(td) ? td : null;
+  };
+  const blockBetween = (a, b) => {
+    if (!a || !b || a === b) return null;
     const table = a.closest('table');
-    if (table !== b.closest('table') || a.parentElement.rowIndex === b.parentElement.rowIndex) return null;
+    if (table !== b.closest('table')) return null;
     const rows = [a.parentElement.rowIndex, b.parentElement.rowIndex].sort((x, y) => x - y);
     const cols = [a.cellIndex, b.cellIndex].sort((x, y) => x - y);
     const out = [];
     for (let i = rows[0]; i <= rows[1]; i++) for (let j = cols[0]; j <= cols[1]; j++) if (table.rows[i] && table.rows[i].cells[j]) out.push(table.rows[i].cells[j]);
     return out.length > 1 ? out : null;
   };
+  // While the mouse is down, the cells the drag covers are tinted and the browser's own selection highlight is
+  // hidden, so only those cells look selected.
+  let dragFrom = null;
+  let dragCells = null;
+  const showDrag = (cells) => {
+    dragCells = cells;
+    for (const td of container.querySelectorAll('td.cell-drag')) if (!cells || !cells.includes(td)) td.classList.remove('cell-drag');
+    if (cells) for (const td of cells) td.classList.add('cell-drag');
+    container.classList.toggle('selecting-cells', !!cells);
+  };
+  const endDrag = () => {
+    dragFrom = null;
+    showDrag(null);
+  };
+  document.addEventListener('mousemove', (e) => {
+    if (!dragFrom || !(e.buttons & 1)) return;
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const hover = under && cellOf(under);
+    if (!hover) return;
+    showDrag(blockBetween(dragFrom, hover)); // (null when back in the first cell: normal text selection)
+  });
+  document.addEventListener('mouseup', () => {
+    if (dragFrom) setTimeout(endDrag, 0); // (after the container's own mouseup has used it)
+  });
   const same = (a, b) => a.compareBoundaryPoints(Range.START_TO_START, b) === 0 && a.compareBoundaryPoints(Range.END_TO_END, b) === 0;
   const sorted = () => ranges.slice().sort((a, b) => a.compareBoundaryPoints(Range.START_TO_START, b));
   container.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     if (e.ctrlKey || e.metaKey) {
+      dragFrom = cellOf(e.target);
       // keep what was already selected, the first time; the double-click then adds a word
       const s = getSelection();
       if (!ranges.length && s.rangeCount && !s.isCollapsed && inside(s.getRangeAt(0))) {
@@ -2792,11 +2849,11 @@ function multiSelect(container, name, { keepNative }) {
   container.addEventListener('mouseup', (e) => {
     if (e.button !== 0 || !(e.ctrlKey || e.metaKey)) return;
     const s = getSelection();
-    if (!s.rangeCount || s.isCollapsed) return;
-    const r = s.getRangeAt(0).cloneRange();
-    if (!inside(r)) return;
-    // Dragging down a table column (or over a block of cells) picks just those cells, not everything in between
-    const cells = cellBlock(r);
+    // Dragging along a table row or column (or over a block of cells) picks just those cells, not everything in between
+    const cells = dragCells;
+    if (!cells && (!s.rangeCount || s.isCollapsed)) return;
+    const r = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;
+    if (!cells && !inside(r)) return;
     if (cells) {
       for (const td of cells) {
         if (ranges.some((x) => x._cell === td)) continue;
@@ -2806,6 +2863,7 @@ function multiSelect(container, name, { keepNative }) {
         ranges.push(cr);
       }
       s.collapse(cells[cells.length - 1], 0);
+      endDrag();
       paint();
       return;
     }
