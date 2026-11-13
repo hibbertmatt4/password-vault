@@ -1,8 +1,8 @@
 {
   "name": "password-vault",
   "productName": "Password Vault",
-  "version": "1.28.0",
-  "description": "A simple, offline, encrypted password manager for Mac and Windows.",
+  "version": "1.29.0",
+  "description": "Password Vault",
   "main": "src/main.js",
   "author": "Matt",
   "license": "MIT",

@@ -1920,7 +1920,7 @@ function updateToolbar() {
   menuBtn('size').classList.toggle('active', inNotes && size !== '3');
   menuBtn('table').classList.toggle('active', inNotes && !!notesCell());
   // the Hide button turns into "Show text" while the cursor is inside a hidden section
-  const inSecret = inNotes && !!secretAround();
+  const inSecret = inNotes && hideButtonUnhides();
   $('tb-secret').classList.toggle('active', inSecret);
   $('tb-secret').querySelector('.tb-label').textContent = inSecret ? 'Unhide' : 'Hide';
 }
@@ -2040,6 +2040,10 @@ $('notes-toolbar').addEventListener('mousedown', (e) => {
   if (e.target.closest('button')) e.preventDefault();
 });
 const swatch = (cls) => `<span class="swatch ${cls}"></span>`;
+const ICON_PALETTE =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 2-.9 2-1.9 0-.5-.2-.9-.5-1.3-.3-.4-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a3.5 3.5 0 0 0 3.5-3.5C20.5 6.7 16.8 3.5 12 3.5Z"/><circle cx="7.6" cy="11.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10.4" cy="7.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.8" cy="7.9" r="1.1" fill="currentColor" stroke="none"/></svg>';
+const ICON_PIPETTE =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14.5 6.5 3 3"/><path d="M16.2 4.8a2.1 2.1 0 0 1 3 3L17 10l-3-3Z"/><path d="m14 7-9 9-.8 3.6L7.8 19l9-9"/></svg>';
 // the bar under the highlight / text color icon shows the color last picked (like Word's)
 const setToolbarBar = (menu, hex) => {
   const bar = document.querySelector(`#notes-toolbar [data-menu="${menu}"] .tb-bar`);
@@ -2089,7 +2093,7 @@ function openColorPanel(x, y, { title, none, text = false, onPick }) {
   const more = document.createElement('button');
   more.type = 'button';
   more.className = 'cp-none cp-more';
-  more.innerHTML = '<span class="cp-none-box cp-rainbow"></span>';
+  more.innerHTML = `<span class="cp-none-box cp-icon">${ICON_PALETTE}</span>`;
   more.appendChild(Object.assign(document.createElement('span'), { textContent: 'More Colors…' }));
   const custom = buildCustomPicker((hex) => {
     rememberColor(hex);
@@ -2103,6 +2107,27 @@ function openColorPanel(x, y, { title, none, text = false, onPick }) {
     panel.style.top = Math.max(8, Math.min(r.top, window.innerHeight - r.height - 8)) + 'px';
   });
   panel.append(more, custom);
+  // "Pick from screen": click anything on the screen (inside this window or outside it) to take its color
+  if (typeof window.EyeDropper === 'function') {
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.className = 'cp-none cp-eye';
+    eye.innerHTML = `<span class="cp-none-box cp-icon">${ICON_PIPETTE}</span>`;
+    eye.appendChild(Object.assign(document.createElement('span'), { textContent: 'Pick from screen' }));
+    eye.addEventListener('click', async () => {
+      try {
+        const { sRGBHex } = await new window.EyeDropper().open();
+        const hex = String(sRGBHex).toLowerCase();
+        if (/^#[0-9a-f]{6}$/.test(hex)) {
+          rememberColor(hex);
+          pick(hex)();
+        }
+      } catch {
+        // (cancelled with Esc: nothing to do)
+      }
+    });
+    panel.insertBefore(eye, more);
+  }
   show(panel);
   const r = panel.getBoundingClientRect();
   panel.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
@@ -2586,26 +2611,50 @@ function splitAtCells(range) {
   }
   return out;
 }
+const secretsTouching = (range) => [...notesEd.querySelectorAll('[data-secret]')].filter((s) => range.intersectsNode(s));
+// A selected part counts as already hidden when it is inside one hidden section, or is nothing but hidden sections.
+function partIsHidden(range) {
+  const inSecret = (n) => nodeEl(n) && nodeEl(n).closest('[data-secret]');
+  const a = inSecret(range.startContainer);
+  if (a && a === inSecret(range.endContainer)) return true;
+  if (!secretsTouching(range).length) return false;
+  const box = document.createElement('div');
+  box.appendChild(range.cloneContents());
+  for (const m of box.querySelectorAll('[data-secret]')) m.remove();
+  return !box.textContent.trim();
+}
+// Is the Hide button an Unhide right now? (the cursor is in a hidden section, or everything selected is hidden)
+function hideButtonUnhides() {
+  const parts = pickedParts();
+  return parts.length ? parts.every(partIsHidden) : !!secretAround();
+}
 // The Hide button and the right-click menu's Hide / Unhide. With several parts picked with Ctrl / ⌘ + double-click,
-// every one of them is hidden.
+// every one of them is hidden, or, when they are all hidden already, un-hidden.
 function toggleSecret() {
   const parts = pickedParts();
-  const inside = parts.length < 2 ? secretAround() : null;
+  const caretIn = parts.length ? null : secretAround();
+  const unhide = parts.length ? parts.every(partIsHidden) : !!caretIn;
   focusNotes();
   const sel = getSelection();
-  if (!sel.rangeCount && parts.length < 2) return;
-  if (inside) {
-    // un-hide: replace the section with what's inside it
-    const kids = [...inside.childNodes];
-    inside.replaceWith(...kids);
+  if (!sel.rangeCount && parts.length < 2 && !caretIn) return;
+  if (unhide) {
+    // un-hide: replace each section with what's inside it
+    const sections = caretIn ? [caretIn] : [...new Set(parts.flatMap(secretsTouching))];
+    let last = null;
+    for (const s of sections) {
+      const kids = [...s.childNodes];
+      last = kids[kids.length - 1] || s.parentNode;
+      s.replaceWith(...kids);
+    }
+    editMulti.clear();
     const r = document.createRange();
-    r.setStartAfter(kids[kids.length - 1] || inside.parentNode);
+    r.setStartAfter(last);
     r.collapse(true);
     sel.removeAllRanges();
     sel.addRange(r);
     notesEd.dispatchEvent(new Event('input'));
   } else {
-    const todo = (parts.length >= 2 ? parts : [sel.getRangeAt(0)]).flatMap(splitAtCells);
+    const todo = (parts.length ? parts.filter((p) => !partIsHidden(p)) : [sel.getRangeAt(0)]).flatMap(splitAtCells);
     let last = null;
     // last one first, so the earlier ones aren't disturbed
     for (const range of todo.slice().reverse()) last = hideRange(range) || last;
@@ -2627,7 +2676,7 @@ $('tb-secret').addEventListener('click', toggleSecret);
 notesEd.addEventListener('contextmenu', () => {
   const sel = getSelection();
   const hasSelection = (sel.rangeCount && !sel.isCollapsed) || editMulti.ranges().length > 1;
-  window.api.setNotesContext({ canHide: hasSelection || !!secretAround(), unhide: !hasSelection && !!secretAround() });
+  window.api.setNotesContext({ canHide: hasSelection || !!secretAround(), unhide: hideButtonUnhides() });
 });
 // ---------- right-click in any text box: the app's own menu ----------
 // (The main process sends what it knows: the misspelled word and suggestions, what can be cut / copied / pasted.)

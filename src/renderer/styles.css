@@ -695,8 +695,9 @@ button.cp-none:hover, button.cp-none:focus-visible { background: rgba(197, 168, 
   display: inline-flex; align-items: center; justify-content: center;
 }
 .cp-none-box.cp-none-text { background: #fff; color: var(--text-dark); font-weight: 700; font-size: 14px; }
-.cp-none-box.cp-rainbow { background: conic-gradient(#f44336, #ffeb3b, #4caf50, #00bcd4, #3f51b5, #e91e63, #f44336); }
-button.cp-more { margin-top: 8px; }
+/* the "More Colors…" and "Pick from screen" icons: line icons in the app's tan tile, like the other menus */
+.cp-none-box.cp-icon { background: rgba(197, 168, 130, 0.22); border-color: rgba(197, 168, 130, 0.45); color: var(--green); }
+button.cp-eye { margin-top: 8px; }
 .cp-custom { margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(49, 61, 42, 0.1); }
 .cp-custom.hidden { display: none; }
 canvas.cp-sv { display: block; width: 247px; height: 132px; border-radius: 6px; cursor: crosshair; touch-action: none; }
