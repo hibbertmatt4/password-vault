@@ -1964,8 +1964,28 @@ $('notes-toolbar').addEventListener('click', (e) => {
       placeCaret(next && next.isConnected ? next : td.isConnected ? td : null);
       notesEd.dispatchEvent(new Event('input'));
     };
+    // Fill colour for the cell, its row, or the whole table (a second menu of colours)
+    const fill = (scope) => () => {
+      const cells = scope === 'cell' ? [td] : scope === 'row' ? [...td.parentElement.cells] : [...td.closest('table').querySelectorAll('td')];
+      const paint = (name) => () => {
+        focusNotes();
+        for (const c of cells) name ? c.setAttribute('data-fill', name) : c.removeAttribute('data-fill');
+        placeCaret(td);
+        notesEd.dispatchEvent(new Event('input'));
+      };
+      popupMenu(x, y, [
+        { label: scope === 'cell' ? 'Fill cell' : scope === 'row' ? 'Fill row' : 'Fill table' },
+        ...RichNotes.HIGHLIGHTS.map(([text]) => ({ text, icon: swatch('sw-' + text.toLowerCase()), run: paint(text.toLowerCase()) })),
+        '-',
+        { text: 'No fill', icon: swatch('sw-none'), run: paint(null) },
+      ]);
+    };
     popupMenu(x, y, [
       { label: 'Table' },
+      { text: 'Fill cell…', icon: swatch('sw-yellow'), run: fill('cell') },
+      { text: 'Fill row…', icon: swatch('sw-green'), run: fill('row') },
+      { text: 'Fill table…', icon: swatch('sw-blue'), run: fill('table') },
+      '-',
       { text: 'Insert row above', icon: ICON.plus, run: edit((c) => RichNotes.addRow(c, false)) },
       { text: 'Insert row below', icon: ICON.plus, run: edit((c) => RichNotes.addRow(c, true)) },
       { text: 'Insert column left', icon: ICON.plus, run: edit((c) => RichNotes.addColumn(c, false)) },
@@ -3955,6 +3975,12 @@ window.addEventListener('blur', closeMenus);
 
 // Escape closes editor/settings.
 document.addEventListener('keydown', (e) => {
+  // Ctrl+S (⌘S on a Mac) saves what's being edited, like the Save button
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if (editorOpen() && !e.repeat) $('edit-pane').requestSubmit ? $('edit-pane').requestSubmit() : saveEditor();
+    return;
+  }
   if (e.key === 'Escape' && openMenu) return closeMenus();
   if (e.key === 'Escape' && !$('ctx-menu').classList.contains('hidden')) return closeMenu();
   if (e.key === 'Escape' && !$('table-picker').classList.contains('hidden')) return closeTablePicker();

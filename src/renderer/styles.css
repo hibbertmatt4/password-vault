@@ -757,6 +757,9 @@ button.secret-copy.copied, button.secret-copy.copied:hover { background: rgba(19
 .rich [data-secret].secret-open { align-self: center; }
 .rich table { border-collapse: collapse; margin: 6px 0; min-width: 40%; max-width: 100%; }
 .rich td { border: 1px solid rgba(49, 61, 42, 0.3); padding: 5px 8px; min-width: 48px; vertical-align: top; }
+.rich td[data-fill='yellow'] { background-color: #fff176; } .rich td[data-fill='green'] { background-color: #b9f6ca; }
+.rich td[data-fill='blue'] { background-color: #b3e5fc; } .rich td[data-fill='pink'] { background-color: #f8bbd0; }
+.rich td[data-fill='orange'] { background-color: #ffcc80; }
 .notes-editor.rich td:focus-within { outline: 2px solid rgba(197, 168, 130, 0.6); outline-offset: -2px; }
 
 /* table size picker */

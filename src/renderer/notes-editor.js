@@ -148,6 +148,9 @@
           }
         }
         if (tag === 'td') {
+          // cell colour: a name (the page's security policy stops inline styles, so styles.css draws each one)
+          const fill = (n.getAttribute('data-fill') || '').toLowerCase();
+          if (HIGHLIGHTS.some((h) => h[0].toLowerCase() === fill)) el.setAttribute('data-fill', fill);
           for (const a of ['colspan', 'rowspan']) {
             const v = parseInt(n.getAttribute(a), 10);
             if (v > 1 && v <= 20) el.setAttribute(a, String(v));
