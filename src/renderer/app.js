@@ -570,9 +570,11 @@ async function renderBackground(p) {
   const mac = p.platform === 'darwin';
   $('bg-keep-title').textContent = mac ? 'Keep running in the menu bar' : 'Keep running in the system tray';
   $('bg-keep-text').textContent = `When you close the window, Password Vault locks and stays in the ${mac ? 'menu bar' : 'tray'}, so it can keep checking for updates and notify you.`;
-  $('bg-login-text').textContent = p.installed
-    ? `Starts quietly in the ${mac ? 'menu bar' : 'tray'}, so you get update notifications even if you don't open it.`
-    : 'Only available in the installed app.';
+  $('bg-login-text').textContent = !p.installed
+    ? 'Only available in the installed app.'
+    : mac && p.openAtLogin && p.keepRunning && p.loginStatus === 'requires-approval'
+      ? 'Almost there: macOS is waiting for you to allow it. Open System Settings → General → Login Items & Extensions and turn on Password Vault.'
+      : `Starts quietly in the ${mac ? 'menu bar' : 'tray'}, so you get update notifications even if you don't open it.`;
   if (Number.isInteger(p.revealSeconds) && p.revealSeconds !== revealSeconds) {
     revealSeconds = p.revealSeconds;
     renderReveal();
@@ -893,11 +895,27 @@ const autoBrands = BRANDS.filter((b) => b.a);
 const autoById = new Map(autoBrands.map((b) => [b.id, b]));
 for (const b of autoBrands) for (const a of b.alias || []) if (!autoById.has(a)) autoById.set(a, b);
 const autoByName = new Map(autoBrands.map((b) => [squash(b.title), b]));
+// Long, distinctive names (8+ letters, like "Tailscale") are safe to match by name even when they aren't in the
+// everyday set: an ordinary word is very unlikely to be a login's name by accident.
+const LONG_NAME = 8;
+const longByName = new Map();
+for (const b of BRANDS) {
+  const key = squash(b.title);
+  if (key.length >= LONG_NAME && !autoByName.has(key) && !longByName.has(key)) longByName.set(key, b);
+}
 
 // Without a chosen icon, show a known logo when the name or website matches one (e.g. "GitHub", "netflix.com").
+// Spaces and punctuation don't matter ("tail scale" finds Tailscale), and neither do extra words after a long name
+// ("Tailscale admin").
 function autoBrand(entry) {
-  const byTitle = autoByName.get(squash(entry.title)) || autoById.get(squash(entry.title));
+  const title = squash(entry.title);
+  const byTitle = autoByName.get(title) || autoById.get(title) || longByName.get(title);
   if (byTitle) return byTitle;
+  const words = String(entry.title || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  for (let n = Math.min(3, words.length - 1); n >= 1; n--) {
+    const key = words.slice(0, n).join('');
+    if (key.length >= LONG_NAME && (autoByName.get(key) || autoById.get(key) || longByName.get(key))) return autoByName.get(key) || autoById.get(key) || longByName.get(key);
+  }
   let host = '';
   try {
     host = new URL(/^https?:\/\//i.test(entry.url) ? entry.url : 'https://' + entry.url).hostname.replace(/^www\./, '');
@@ -905,7 +923,7 @@ function autoBrand(entry) {
     return null;
   }
   const name = host.split('.').slice(-2, -1)[0];
-  return name ? autoById.get(name) || autoByName.get(name) || null : null;
+  return name ? autoById.get(name) || autoByName.get(name) || (name.length >= LONG_NAME ? longByName.get(name) : null) || null : null;
 }
 
 // Light brand colours (e.g. Snapchat yellow) get a dark logo; dark ones get a white logo.
@@ -1878,6 +1896,62 @@ function notesCell() {
   const td = el && el.closest('td');
   return td && notesEd.contains(td) ? td : null;
 }
+// A size in points: the browser can only do seven sizes itself, so it is asked for the biggest and that piece is
+// swapped for a <span data-pt="…">, which the page draws at exactly that size.
+function applyPointSize(pt) {
+  const before = new Set(notesEd.querySelectorAll('font[size="7"]'));
+  noteHist.restoring = true; // (one undo step for the whole change, not two)
+  try {
+    runNotes('fontSize', '7');
+  } finally {
+    noteHist.restoring = false;
+  }
+  const spans = [];
+  for (const f of notesEd.querySelectorAll('font[size="7"]')) {
+    if (before.has(f)) continue;
+    const span = document.createElement('span');
+    span.setAttribute('data-pt', String(pt));
+    while (f.firstChild) span.appendChild(f.firstChild);
+    f.replaceWith(span);
+    // sizing something that is already sized as a whole: just change that size, instead of nesting another span in it
+    const outer = span.parentElement;
+    if (outer && outer !== notesEd && outer.tagName === 'SPAN' && outer.hasAttribute('data-pt') && outer.childNodes.length === 1) {
+      outer.setAttribute('data-pt', String(pt));
+      outer.replaceChildren(...span.childNodes);
+      spans.push(outer);
+    } else spans.push(span);
+  }
+  for (const s of spans) for (const inner of s.querySelectorAll('[data-pt], font[size]')) inner.replaceWith(...inner.childNodes); // (a new size replaces older ones inside it)
+  if (spans.length) {
+    const r = document.createRange();
+    r.setStart(spans[0], 0);
+    r.setEnd(spans[spans.length - 1], spans[spans.length - 1].childNodes.length);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+  rememberNotesSelection();
+  notesEd.dispatchEvent(new Event('input'));
+  updateToolbar();
+}
+async function customPointSize(current) {
+  const min = RichNotes.SIZE_MIN;
+  const max = RichNotes.SIZE_MAX;
+  const v = await ask({
+    title: 'Text size',
+    text: `Type a size from ${min} to ${max}.`,
+    value: /^\d+$/.test(current) ? current : '',
+    placeholder: 'e.g. 18',
+    ok: 'Apply',
+    validate: (val) => (/^\d{1,3}$/.test(val) && +val >= min && +val <= max ? null : `Please type a whole number from ${min} to ${max}.`),
+  });
+  if (v) {
+    focusNotes();
+    applyPointSize(+v);
+  }
+}
+// the old five sizes (<font size="1…7">) shown as points
+const LEGACY_SIZE_PT = { 1: '8', 2: '9', 4: '13', 5: '16', 6: '20', 7: '26' };
 function updateToolbar() {
   const inNotes = document.activeElement === notesEd;
   for (const b of document.querySelectorAll('#notes-toolbar [data-cmd]')) {
@@ -1892,13 +1966,19 @@ function updateToolbar() {
     b.classList.toggle('active', on);
     b.setAttribute('aria-pressed', String(on));
   }
-  // text size: the nearest size set around the cursor
-  let size = '3';
+  // text size and font: the nearest one set around the cursor
   const r = inNotes && getSelection().rangeCount ? getSelection().getRangeAt(0) : null;
-  const f = r && nodeEl(r.startContainer) && nodeEl(r.startContainer).closest('font[size]');
-  if (f && notesEd.contains(f)) size = f.getAttribute('size');
-  const s = RichNotes.SIZES.find((x) => x[1] === size);
-  $('tb-size-label').textContent = s ? s[0] : size > '3' ? 'Huge' : 'Small';
+  const near = (sel) => {
+    const e = r && nodeEl(r.startContainer) && nodeEl(r.startContainer).closest(sel);
+    return e && notesEd.contains(e) ? e : null;
+  };
+  const sizeEl = near('[data-pt], font[size]');
+  let sizeLabel = 'Normal';
+  if (sizeEl && sizeEl.hasAttribute('data-pt')) sizeLabel = sizeEl.getAttribute('data-pt');
+  else if (sizeEl && sizeEl.getAttribute('size') !== '3') sizeLabel = LEGACY_SIZE_PT[sizeEl.getAttribute('size')] || 'Normal';
+  $('tb-size-label').textContent = sizeLabel;
+  const fontEl = near('font[face]');
+  $('tb-font-label').textContent = fontEl ? fontEl.getAttribute('face') : RichNotes.DEFAULT_FONT;
   // Highlight, text colour, text size and table light up like Bold when the cursor (or selection) is in something
   // that isn't the default: a highlighted or coloured part, a non-normal size, or a table.
   let hl = false;
@@ -1917,7 +1997,8 @@ function updateToolbar() {
   const menuBtn = (m) => document.querySelector(`#notes-toolbar [data-menu="${m}"]`);
   menuBtn('highlight').classList.toggle('active', hl);
   menuBtn('color').classList.toggle('active', colour);
-  menuBtn('size').classList.toggle('active', inNotes && size !== '3');
+  menuBtn('size').classList.toggle('active', inNotes && sizeLabel !== 'Normal');
+  menuBtn('font').classList.toggle('active', inNotes && !!fontEl);
   menuBtn('table').classList.toggle('active', inNotes && !!notesCell());
   // the Fill button appears next to the table button while the cursor is in a table (and stays while its colors are open)
   if (inNotes) $('tb-fill').classList.toggle('hidden', !notesCell());
@@ -2276,8 +2357,19 @@ $('notes-toolbar').addEventListener('click', (e) => {
   rememberNotesSelection();
   const [x, y] = btnPos(b);
   if (b.dataset.menu === 'size') {
+    // like Word: Normal (the default), then point sizes, or type any size
     const current = $('tb-size-label').textContent;
-    popupMenu(x, y, RichNotes.SIZES.map(([text, v]) => ({ text, selected: text === current, run: () => runNotes('fontSize', v) })));
+    popupMenu(x, y, [
+      { text: 'Normal', selected: current === 'Normal', run: () => runNotes('fontSize', '3') },
+      ...RichNotes.SIZE_PRESETS.map((pt) => ({ text: String(pt), selected: current === String(pt), run: () => applyPointSize(pt) })),
+      '-',
+      { text: 'Custom size…', run: () => customPointSize(current) },
+    ]);
+  } else if (b.dataset.menu === 'font') {
+    const current = $('tb-font-label').textContent;
+    popupMenu(x, y, RichNotes.FONTS.map(([name]) => ({ text: name, selected: name === current, run: () => runNotes('fontName', name) })));
+    // each name is drawn in its own font
+    [...$('ctx-menu').querySelectorAll('.menu-option .label')].forEach((el, i) => (el.style.fontFamily = RichNotes.FONTS[i][1]));
   } else if (b.dataset.menu === 'highlight') {
     openColorPanel(x, y, {
       none: 'No Color',

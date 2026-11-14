@@ -243,7 +243,7 @@ button.add-btn:hover { background: #d4b993; border-color: #d4b993; }
 .empty h3 em { font-style: italic; color: var(--tan); }
 .empty p { color: var(--text-muted); font-size: 13px; }
 
-.pane { max-width: 860px; } /* wide enough for the whole notes toolbar on one line */
+.pane { max-width: 900px; } /* wide enough for the whole notes toolbar on one line */
 .page-eyebrow {
   display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;
   font-size: 11px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted);
@@ -664,7 +664,7 @@ button.icon-pick .avatar { width: 30px; height: 30px; border-radius: 7px; font-s
 .notes-box:focus-within { border-color: var(--tan); box-shadow: 0 0 0 3px rgba(197, 168, 130, 0.18); }
 .notes-editor:focus-visible, .notes-editor:focus { outline: none; }
 .notes-toolbar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 5px 6px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 1px; padding: 5px 5px;
   border-bottom: 1px solid rgba(49, 61, 42, 0.1); background: var(--tint-1);
 }
 button.tb {
@@ -673,7 +673,9 @@ button.tb {
 }
 button.tb:hover { background: rgba(49, 61, 42, 0.08); }
 button.tb.active { background: rgba(49, 61, 42, 0.14); }
-button.tb-size { font-size: 12.5px; min-width: 84px; justify-content: space-between; }
+button.tb-size { font-size: 12.5px; min-width: 56px; justify-content: space-between; }
+button.tb-font { font-size: 12.5px; width: 100px; justify-content: space-between; }
+button.tb-font span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-serif { font-family: Georgia, serif; }
 .tb-color-bar { stroke: #c0392b; stroke-width: 3; }
 button.tb:disabled, button.tb:disabled:hover { opacity: 0.35; background: transparent; cursor: default; }
@@ -713,7 +715,7 @@ input[type='range'].cp-hue::-webkit-slider-thumb {
 input.cp-hex { flex: 1; min-width: 0; height: 32px; padding: 0 10px; font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace; text-transform: lowercase; }
 button.cp-ok { height: 32px; padding: 0 16px; }
 .tb-hl-bar { stroke: #e2c400; stroke-width: 3; }
-.tb-sep { width: 1px; height: 18px; background: rgba(49, 61, 42, 0.15); margin: 0 4px; }
+.tb-sep { width: 1px; height: 18px; background: rgba(49, 61, 42, 0.15); margin: 0 3px; }
 .notes-editor {
   min-height: 110px; max-height: 420px; overflow: auto; resize: vertical;
   padding: 10px 12px; font-size: 13.5px; line-height: 1.5; color: var(--text-dark); outline: none; user-select: text;

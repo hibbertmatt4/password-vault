@@ -1156,18 +1156,31 @@ function registerIpc() {
   });
 
   // Settings: keep running in the tray / open at sign-in.
-  ipcMain.handle('prefs:get', () => ({ ...prefs(), platform: process.platform, installed: app.isPackaged }));
+  // (loginStatus, Mac only: 'requires-approval' when macOS is waiting for the user to allow it under System Settings →
+  // General → Login Items, otherwise 'enabled' / 'not-registered' …)
+  const prefsFull = () => {
+    let loginStatus = '';
+    if (process.platform === 'darwin' && app.isPackaged) {
+      try {
+        loginStatus = String(app.getLoginItemSettings().status || '');
+      } catch {
+        loginStatus = '';
+      }
+    }
+    return { ...prefs(), platform: process.platform, installed: app.isPackaged, loginStatus };
+  };
+  ipcMain.handle('prefs:get', () => prefsFull());
   ipcMain.handle('prefs:set', (_e, key, value) => {
     if (key === 'revealSeconds') {
       const n = Math.round(Number(value));
       if (Number.isFinite(n) && n >= 0 && n < 86400) settings.set('revealSeconds', n);
-      return { ...prefs(), platform: process.platform, installed: app.isPackaged };
+      return prefsFull();
     }
-    if (!['keepRunning', 'openAtLogin', 'autoInstall'].includes(key)) return prefs();
+    if (!['keepRunning', 'openAtLogin', 'autoInstall'].includes(key)) return prefsFull();
     settings.set(key, !!value);
     applyBackgroundPrefs();
     maybeAutoInstall();
-    return { ...prefs(), platform: process.platform, installed: app.isPackaged };
+    return prefsFull();
   });
 
   // Settings → Notifications.

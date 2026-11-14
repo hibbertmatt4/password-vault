@@ -46,6 +46,27 @@
     ['Brown', '#795548'],
     ['Grey', '#7a7a7a'],
   ];
+  // Fonts for the notes: [name, CSS stack]. The first is the app's own font (what text uses when no font was picked);
+  // the rest are fonts every Windows and Mac computer has. A font is kept in a note as <font face="name">.
+  const FONTS = [
+    ['DM Sans', "'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"],
+    ['Playfair Display', "'Playfair Display', Georgia, serif"],
+    ['Georgia', "Georgia, 'Times New Roman', serif"],
+    ['Times New Roman', "'Times New Roman', Times, serif"],
+    ['Palatino', "'Palatino Linotype', Palatino, 'Book Antiqua', serif"],
+    ['Arial', 'Arial, Helvetica, sans-serif'],
+    ['Verdana', 'Verdana, Geneva, sans-serif'],
+    ['Trebuchet MS', "'Trebuchet MS', Helvetica, sans-serif"],
+    ['Courier New', "'Courier New', Courier, monospace"],
+    ['Comic Sans MS', "'Comic Sans MS', 'Comic Sans', cursive"],
+  ];
+  const DEFAULT_FONT = FONTS[0][0];
+  const FONT_OK = new Set(FONTS.map((f) => f[0]));
+  // Text sizes, in points like Word's (the old five sizes still show in notes saved with them). A size is kept in a
+  // note as data-pt on a <span>; the page's rules below draw each one.
+  const SIZE_PRESETS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72];
+  const SIZE_MIN = 6;
+  const SIZE_MAX = 200;
   // The color picker grids (like Word's): theme colors (a column per hue, light to dark) and a row of standard ones.
   const DEFAULT_TEXT = '#2f3b28'; // the text color "Automatic" gives
   const THEME_COLORS = [
@@ -80,6 +101,10 @@
     colorSheet.insertRule(`.rich td[data-fill='${hex.slice(1)}'] { background-color: ${hex}; }`, colorSheet.cssRules.length);
   }
   PALETTE.forEach(registerColor);
+  if (colorSheet) {
+    for (const [name, stack] of FONTS) colorSheet.insertRule(`.rich font[face='${name}'] { font-family: ${stack}; }`, colorSheet.cssRules.length);
+    for (let pt = SIZE_MIN; pt <= SIZE_MAX; pt++) colorSheet.insertRule(`.rich [data-pt='${pt}'] { font-size: ${pt}pt; }`, colorSheet.cssRules.length);
+  }
   const ALIGN = ['center', 'right', 'justify'];
   const MAX_HTML = 8 * 1024 * 1024; // pictures make notes bigger
   const MAX_PICTURE = 3 * 1024 * 1024;
@@ -168,10 +193,17 @@
             registerColor('#' + bg.slice(1, 4).map((v) => (+v).toString(16).padStart(2, '0')).join(''));
           }
         }
-        // size and text colour
+        // a text size in points
+        if (tag === 'span') {
+          const pt = parseInt(n.getAttribute('data-pt'), 10);
+          if (pt >= SIZE_MIN && pt <= SIZE_MAX && String(pt) === String(n.getAttribute('data-pt')).trim()) el.setAttribute('data-pt', String(pt));
+        }
+        // size, font and text colour
         if (tag === 'font') {
           const size = n.getAttribute('size');
           if (/^[1-7]$/.test(size || '')) el.setAttribute('size', size);
+          const face = n.getAttribute('face');
+          if (FONT_OK.has(face) && face !== DEFAULT_FONT) el.setAttribute('face', face); // (the app's font is just "no font")
           const c = hexColour(n.getAttribute('color'));
           if (c && c !== DEFAULT_TEXT) el.setAttribute('color', c); // (the automatic color is just "no color")
         }
@@ -416,5 +448,5 @@
     }
   }
 
-  window.RichNotes = { secretHtml, maskSecrets, SIZES, HIGHLIGHTS, COLOURS, THEME_COLORS, STANDARD_COLORS, DEFAULT_TEXT, registerColor, sanitize, toText, hasFormatting, fromPlain, richFor, tableHtml, addRow, addColumn, deleteRow, deleteColumn };
+  window.RichNotes = { secretHtml, maskSecrets, SIZES, HIGHLIGHTS, COLOURS, THEME_COLORS, STANDARD_COLORS, DEFAULT_TEXT, FONTS, DEFAULT_FONT, SIZE_PRESETS, SIZE_MIN, SIZE_MAX, registerColor, sanitize, toText, hasFormatting, fromPlain, richFor, tableHtml, addRow, addColumn, deleteRow, deleteColumn };
 })();
